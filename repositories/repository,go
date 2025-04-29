@@ -1,0 +1,141 @@
+package repository
+
+import (
+	"database/sql"
+	"fmt"
+	"reflect"
+)
+
+// GenericRepository định nghĩa các thao tác CRUD chung.
+type GenericRepository[T any] interface {
+	Create(entity *T) error
+	GetByID(id int64) (*T, error)
+	Update(entity *T) error
+	Delete(id int64) error
+	GetAll() ([]*T, error)
+}
+
+// SQLGenericRepository triển khai GenericRepository cho cơ sở dữ liệu SQL.
+type SQLGenericRepository[T any] struct {
+	db    *sql.DB
+	table string
+}
+
+// NewSQLGenericRepository tạo một instance mới của SQLGenericRepository.
+// Cần truyền vào đối tượng mẫu (zero value) của kiểu T để xác định tên bảng.
+func NewSQLGenericRepository[T any](db *sql.DB, sample T) *SQLGenericRepository[T] {
+	return &SQLGenericRepository[T]{
+		db:    db,
+		table: getTableName(sample),
+	}
+}
+
+// getTableName lấy tên bảng từ kiểu của entity (ví dụ: "users" từ User{}).
+// Bạn có thể cần tùy chỉnh logic này dựa trên quy ước đặt tên bảng của bạn.
+func getTableName(sample any) string {
+	typeName := reflect.TypeOf(sample).Name()
+	// Ví dụ đơn giản: chuyển CamelCase thành snake_case và thêm "s" ở cuối
+	tableName := ""
+	for i, r := range typeName {
+		if i > 0 && 'A' <= r && r <= 'Z' {
+			tableName += "_"
+		}
+		tableName += string(rune(r) + ('a' - 'A'))
+	}
+	return tableName + "s"
+}
+
+// Create lưu một entity mới vào cơ sở dữ liệu.
+func (r *SQLGenericRepository[T]) Create(entity *T) error {
+	// Lấy danh sách các trường và placeholders cho câu lệnh INSERT
+	fields := make([]string, 0)
+	placeholders := make([]string, 0)
+	values := make([]interface{}, 0)
+
+	val := reflect.ValueOf(entity).Elem()
+	typ := val.Type()
+
+	for i := 0; i < val.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Tag.Get("db") != "" { // Sử dụng tag "db" để ánh xạ tên cột
+			fields = append(fields, field.Tag.Get("db"))
+			placeholders = append(placeholders, "?")
+			values = append(values, val.Field(i).Interface())
+		}
+	}
+
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		r.table,
+		strings.Join(fields, ", "),
+		strings.Join(placeholders, ", "),
+	)
+
+	_, err := r.db.Exec(query, values...)
+	return err
+}
+
+// GetByID lấy một entity từ cơ sở dữ liệu theo ID.
+func (r *SQLGenericRepository[T]) GetByID(id int64) (*T, error) {
+	query := fmt.Sprintf("SELECT * FROM %s WHERE id = ?", r.table)
+	row := r.db.QueryRow(query, id)
+
+	entity := new(T)
+	val := reflect.ValueOf(entity).Elem()
+	typ := val.Type()
+	scanArgs := make([]interface{}, val.NumField())
+
+	for i := 0; i < val.NumField(); i++ {
+		scanArgs[i] = val.Field(i).Addr().Interface()
+	}
+
+	err := row.Scan(scanArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	return entity, nil
+}
+
+// Update cập nhật thông tin của một entity trong cơ sở dữ liệu.
+func (r *SQLGenericRepository[T]) Update(entity *T) error {
+	// Tương tự như Create, bạn cần xây dựng câu lệnh UPDATE dựa trên các trường
+	// và sử dụng reflection để lấy giá trị. Đừng quên điều kiện WHERE id = ?.
+	// (Phần này bạn cần triển khai cụ thể)
+	return fmt.Errorf("Update function not implemented yet")
+}
+
+// Delete xóa một entity khỏi cơ sở dữ liệu theo ID.
+func (r *SQLGenericRepository[T]) Delete(id int64) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE id = ?", r.table)
+	_, err := r.db.Exec(query, id)
+	return err
+}
+
+// GetAll lấy tất cả các entity từ cơ sở dữ liệu.
+func (r *SQLGenericRepository[T]) GetAll() ([]*T, error) {
+	query := fmt.Sprintf("SELECT * FROM %s", r.table)
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entities []*T
+	for rows.Next() {
+		entity := new(T)
+		val := reflect.ValueOf(entity).Elem()
+		scanArgs := make([]interface{}, val.NumField())
+
+		for i := 0; i < val.NumField(); i++ {
+			scanArgs[i] = val.Field(i).Addr().Interface()
+		}
+
+		err = rows.Scan(scanArgs...)
+		if err != nil {
+			return nil, err
+		}
+		entities = append(entities, entity)
+	}
+
+	return entities, nil
+}

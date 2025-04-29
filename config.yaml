@@ -1,0 +1,16 @@
+db_:
+  dbType: postgres
+  dbName: my_database
+  dbUser: my_user
+  dbPassword: my_password
+  dbHost: localhost
+  dbPort: 5432
+  dbSchema: public
+db:
+  dbType: mysql
+  dbName: my_database
+  dbUser: my_user
+  dbPassword: my_password
+  dbHost: localhost
+  dbPort: 3306
+  dbSchema: public
