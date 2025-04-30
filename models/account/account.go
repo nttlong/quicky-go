@@ -1,25 +1,24 @@
-package user
+package account
 
 import (
-	"time"
+	"quicky-go/models/bases"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // models/user/user.go
-
-type User struct {
-	ID        uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
-	FirstName string    `json:"first_name"`
-	LastName  string    `json:"last_name"`
-	Email     string    `json:"email" binding:"required,email"`
-	Password  string    `json:"-" gorm:"not null"` // Lưu bản hash, không hiển thị trong JSON
-	Salt      string    `json:"-" gorm:"not null"` // Lưu salt, không hiển thị trong JSON
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+type Account struct {
+	bases.BaseModel
+	Username string `gorm:"uniqueIndex:idx_username,length:191;type:varchar(191);column:Username"`
+	Email    string `gorm:"uniqueIndex:idx_email,length:191;type:varchar(191);column:Email"`
+	Password string `gorm:"column:Password"`
+	Salt     string `json:"-" gorm:"not null;column:Salt"` // Lưu salt, không hiển thị trong JSON
 }
 
+// TableName sets the desired table name
+func (Account) TableName() string {
+	return "Account"
+}
 func HashPasswordWithSalt(password, salt string) (string, error) {
 	// **LƯU Ý QUAN TRỌNG:** Trong ứng dụng thực tế, bạn NÊN sử dụng bcrypt thay vì cách này.
 	// bcrypt tự động tạo salt an toàn và tích hợp nó vào hash.

@@ -8,7 +8,7 @@ db_:
   dbSchema: public
 db:
   dbType: mysql
-  dbName: hrm
+  dbName: saas
   dbUser: root
   dbPassword: 123456
   dbHost: localhost

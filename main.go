@@ -4,7 +4,8 @@ import (
 	"log"
 
 	"quicky-go/configs"
-	_ "quicky-go/repo_migrate"
+
+	"quicky-go/repo"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -15,5 +16,10 @@ func main() {
 	log.Println("Config file path:", configs.ConfigFilePath)
 	log.Println("Starting application...")
 	log.Println(configs.Info.DB.DBName)
+	cnn, err := repo.GetRepo("test-001")
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(cnn)
 
 }
