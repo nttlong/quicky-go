@@ -8,6 +8,8 @@ import (
 	"quicky-go/configs"
 	"quicky-go/models"
 
+	qErr "quicky-go/repo/errors"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -170,7 +172,17 @@ func GetManagerRepo() *gorm.DB {
 	return ret
 
 }
-
+func Insert(dbName string, data interface{}) *qErr.ErrorAnalysisResult {
+	db, err := GetRepo(dbName)
+	if err != nil {
+		return qErr.AnalizeError(db, data, err)
+	}
+	result := db.Create(data)
+	if result.Error != nil {
+		return qErr.AnalizeError(db, data, result.Error)
+	}
+	return nil
+}
 func init() {
 
 	cfg := configs.Info.DB

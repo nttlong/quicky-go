@@ -3,12 +3,17 @@ package tenants
 // quản lý các tenant trong hệ thống
 import (
 	"fmt"
+	"quicky-go/manager/accounts"
 	"quicky-go/models/tenants"
 	"quicky-go/repo"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
+
+	repo_err "quicky-go/repo/errors"
+
+	"github.com/google/uuid"
 )
 
 // Định nghĩa custom error struct
@@ -81,6 +86,7 @@ func CreateTenant(name string, descrition string) (*tenants.Tenants, error) {
 
 	// tạo tenant mới
 	t := tenants.Tenants{
+		ID:          uuid.New(),
 		Name:        name,
 		Description: descrition,
 		Status:      1,
@@ -94,17 +100,40 @@ func CreateTenant(name string, descrition string) (*tenants.Tenants, error) {
 	var repoManager = repo.GetManagerRepo()
 	err := repoManager.Create(&t).Error
 	if err != nil {
-		return nil, err
+
+		// check duplicate tenant name
+		errType := repo_err.AnalizeError(repoManager, &t, err)
+		if errType.DbErrorType == repo_err.DuplicateError {
+			if errType.Columns[0] == "ID" {
+				repoManager.Where("ID = ?", t.ID).First(&t)
+
+			} else if errType.Columns[0] == "Name" {
+				repoManager.Where("NameD = ?", t.Name).First(&t)
+			} else {
+				return nil, err
+			}
+
+		} else {
+			return nil, err
+		}
+
 	}
-	repoTenant, errGet := repo.GetRepo(t.DbTenant)
+
+	_, errGet := repo.GetRepo(t.DbTenant)
 	if errGet != nil {
 		return nil, errGet
 	}
 	// tạo database cho tenant mới
-	err = repoTenant.AutoMigrate(repoTenant)
-	if err != nil {
-		return nil, err
+
+	_, qErr := accounts.CreateAccount(t.DbTenant, "admin", "admin", "admin")
+	if qErr.DbErrorType == repo_err.DuplicateError {
+		if qErr.Columns[0] == "Username" || qErr.Columns[0] == "Email" {
+			return &t, nil
+		}
+	} else {
+		return nil, qErr
 	}
+
 	return &t, nil
 
 }

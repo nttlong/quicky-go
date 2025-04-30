@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"quicky-go/models/account"
 	"quicky-go/models/bases"
+	"quicky-go/repo"
 	"time"
+
+	qErr "quicky-go/repo/errors"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 func HashPasswordWithSalt(password, salt string) (string, error) {
@@ -30,17 +32,17 @@ func generateSalt() (string, error) {
 }
 
 // CreateAccount creates a new account in the database.
-func CreateAccount(db *gorm.DB, username, email, plainPassword string) (*account.Account, error) {
+func CreateAccount(dbName string, username, email, plainPassword string) (*account.Account, *qErr.ErrorAnalysisResult) {
 	// 1. Generate a unique salt
 	salt, err := generateSalt()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate salt: %w", err)
+		return nil, qErr.AnalizeError(nil, nil, err)
 	}
 
 	// 2. Hash the password with the salt
 	hashedPassword, err := HashPasswordWithSalt(plainPassword, salt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, qErr.AnalizeError(nil, nil, err)
 	}
 
 	// 3. Create a new Account instance
@@ -49,8 +51,8 @@ func CreateAccount(db *gorm.DB, username, email, plainPassword string) (*account
 			ID:         uuid.New(),
 			CreatedBy:  "admin",
 			ModifiedBy: "admin",
-			CreatedOn:  time.Now(),
-			ModifiedOn: time.Now(),
+			CreatedOn:  time.Now().UTC(),
+			ModifiedOn: time.Now().UTC(),
 		},
 		Username: username,
 		Email:    email,
@@ -59,10 +61,26 @@ func CreateAccount(db *gorm.DB, username, email, plainPassword string) (*account
 	}
 
 	// 4. Create the account in the database using GORM
-	result := db.Create(&newAccount)
-	if result.Error != nil {
-		return nil, fmt.Errorf("failed to create account in database: %w", result.Error)
+
+	qErr := repo.Insert(dbName, &newAccount)
+	if qErr != nil {
+		return nil, qErr
 	}
 
 	return &newAccount, nil
+}
+func CheckIsAccountExist(dbName string, username, email string) (bool, error) {
+	db, err := repo.GetRepo(dbName)
+	if err != nil {
+		return false, fmt.Errorf("failed to get repository: %w", err)
+	}
+	var count int64
+	result := db.Model(&account.Account{}).Where("username = ? OR email = ?", username, email).Count(&count)
+	if result.Error != nil {
+		return false, fmt.Errorf("failed to count account in database: %w", result.Error)
+	}
+	if count > 0 {
+		return true, nil
+	}
+	return false, nil
 }
