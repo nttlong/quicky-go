@@ -82,17 +82,26 @@ func CreateTenant(name string, descrition string) (*tenants.Tenants, error) {
 	// tạo tenant mới
 	t := tenants.Tenants{
 		Name:        name,
-		Description: "Mô tả của tenant",
+		Description: descrition,
 		Status:      1,
-		DbTenant:    name.lower(),
+		DbTenant:    strings.ToLower(name),
 		CreatedBy:   "admin",
 		ModifiedBy:  "admin",
-		CreatedOn:   time.Now(),
-		ModifiedOn:  time.Now(),
+		CreatedOn:   time.Now().UTC(),
+		ModifiedOn:  time.Now().UTC(),
 	}
 	// lưu vào cơ sở dữ liệu
-	var repo = repo.GetManagerRepo()
-	err := repo.Create(&t).Error
+	var repoManager = repo.GetManagerRepo()
+	err := repoManager.Create(&t).Error
+	if err != nil {
+		return nil, err
+	}
+	repoTenant, errGet := repo.GetRepo(t.DbTenant)
+	if errGet != nil {
+		return nil, errGet
+	}
+	// tạo database cho tenant mới
+	err = repoTenant.AutoMigrate(repoTenant)
 	if err != nil {
 		return nil, err
 	}

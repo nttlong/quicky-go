@@ -7,6 +7,8 @@ import (
 
 	"quicky-go/repo"
 
+	"quicky-go/manager/tenants"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -21,5 +23,6 @@ func main() {
 		log.Println(err)
 	}
 	log.Println(cnn)
+	tenants.CreateTenant("test-001", "test-001-name")
 
 }

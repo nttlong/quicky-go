@@ -151,6 +151,11 @@ func GetRepo(tenanDb string) (*gorm.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to auto migrate database '%s': %w", tenanDb, err)
 		}
+	} else {
+		err := models.AutoMigrateSystemDB(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to auto migrate database '%s': %w", tenanDb, err)
+		}
 	}
 
 	return db, nil
