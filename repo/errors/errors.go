@@ -30,11 +30,54 @@ func (e ErrorAnalysisResult) Error() string {
 		e.DbErrorType, e.TableName, e.Columns, e.ErrorMessage)
 }
 
+// Cache entity model and name
+var entityModelCache = make(map[interface{}]string)
+
+// function get tablename form entity model
+func GetTableName(db *gorm.DB, entity interface{}) (*string, error) {
+	//check entity model in cache
+	// get type of entity model
+	t := reflect.TypeOf(entity)
+	// check cache
+
+	if tableName, ok := entityModelCache[t]; ok {
+		return &tableName, nil
+	}
+	stmt := &gorm.Statement{DB: db}
+	stmt.Model = entity // Thiết lập model cho statement bằng cách gán field
+	err := stmt.Parse(stmt.Model)
+	if err == nil && stmt.Schema != nil {
+		// update cache
+		entityModelCache[t] = stmt.Schema.Table
+		return &stmt.Schema.Table, nil
+	}
+	return nil, fmt.Errorf("Cannot get table name from entity model: %v", err)
+	// update cache
+
+}
+
+// decalglobal var has dict store entyty model and map[string][]string
+var PrimaryColumnsCache = make(map[string][]string)
+
 // getPrimaryColumns nhận vào một entity (struct) và trả về một slice chứa tên
 // các cột (trong database) được đánh dấu là primary key thông qua tag `gorm`.
 // getPrimaryColumns takes an entity (struct) and returns a slice containing the
 // database column names marked as primary key using the `gorm` tag.
-func GetPrimaryColumns(entity interface{}) []string {
+func GetPrimaryColumns(db *gorm.DB, entity interface{}) []string {
+
+	//table is
+	tableName, terr := GetTableName(db, entity)
+	if terr != nil {
+		panic(terr)
+	}
+	if tableName == nil {
+		panic("Cannot get table name from entity model")
+	}
+
+	if _, ok := PrimaryColumnsCache[*tableName]; ok {
+
+		return PrimaryColumnsCache[*tableName]
+	}
 	primaryColumns := make([]string, 0)
 	val := reflect.ValueOf(entity)
 	typ := reflect.TypeOf(entity)
@@ -74,13 +117,29 @@ func GetPrimaryColumns(entity interface{}) []string {
 			primaryColumns = append(primaryColumns, columnName)
 		}
 	}
-
+	// Cập nhật PrimaryColumnsCache
+	PrimaryColumnsCache[*tableName] = primaryColumns
 	return primaryColumns
 }
 
+// decalre global var has dict store entyty model lool likes entityModelDictRequireCols[tableName] = []string{"column1", "column2"}
+var RequiredColumnsCache = make(map[string][]string)
+
 // getRequiredColumns nhận vào một entity (struct) và trả về một slice chứa tên
 // các cột (trong database) được đánh dấu là bắt buộc (not null) thông qua tag `gorm`.
-func GetRequiredColumns(entity interface{}) []string {
+func GetRequiredColumns(db *gorm.DB, entity interface{}) []string {
+	//get table name from entity model
+	tableName, terr := GetTableName(db, entity)
+	if terr != nil {
+		panic(terr)
+	}
+	if tableName == nil {
+		panic("Cannot get table name from entity model")
+	}
+	if _, ok := RequiredColumnsCache[*tableName]; ok {
+
+		return RequiredColumnsCache[*tableName]
+	}
 	requiredColumns := make([]string, 0)
 	val := reflect.ValueOf(entity)
 	typ := reflect.TypeOf(entity)
@@ -121,23 +180,32 @@ func GetRequiredColumns(entity interface{}) []string {
 			requiredColumns = append(requiredColumns, columnName)
 		}
 	}
-
+	// Cập nhật entityModelDictRequireCols
+	RequiredColumnsCache[*tableName] = requiredColumns
 	return requiredColumns
 }
 
-// Helper function to split a string after the last occurrence of a delimiter
-func splitAfterLast(s string, delimiter string) (before string, after string) {
-	lastIndex := strings.LastIndex(s, delimiter)
-	if lastIndex == -1 {
-		return s, ""
-	}
-	return s[:lastIndex], s[lastIndex+len(delimiter):]
-}
+// decalre global var has dict store entyty model and map[string][]string
+// like entityModelDict["tableName"] ["indexName"] = []string{"column1", "column2"}
+var IndexColoumnsCache = make(map[string]map[string][]string)
 
 // getColumnsGroupedByIndex takes an entity (struct) and returns a map where keys are index names
 // and values are slices of column names that belong to that index.  It considers "index",
 // "uniqueIndex", and "primaryKey" tags.
-func GetColumnsGroupedByIndex(entity interface{}) map[string][]string {
+func GetColumnsGroupedByIndex(db *gorm.DB, entity interface{}) map[string][]string {
+	// get table name from entity model
+	tableName, terr := GetTableName(db, entity)
+	if terr != nil {
+		panic(terr)
+	}
+	if tableName == nil {
+		panic("Cannot get table name from entity model")
+	}
+	if _, ok := IndexColoumnsCache[*tableName]; ok {
+
+		return IndexColoumnsCache[*tableName]
+	}
+
 	columnsByIndex := make(map[string][]string)
 	val := reflect.ValueOf(entity)
 	typ := reflect.TypeOf(entity)
@@ -184,6 +252,8 @@ func GetColumnsGroupedByIndex(entity interface{}) map[string][]string {
 			columnsByIndex[indexName] = append(columnsByIndex[indexName], columnName)
 		}
 	}
+	// Update entityModelDict
+	IndexColoumnsCache[*tableName] = columnsByIndex
 	return columnsByIndex
 }
 
@@ -220,12 +290,12 @@ func AnalizeError(db *gorm.DB, entityModel interface{}, err error) *ErrorAnalysi
 		if strings.Contains(result.ErrorMessage, "Duplicate entry") {
 			result.DbErrorType = DuplicateError
 			// Cố gắng trích xuất cột gây ra lỗi (dựa trên primary key)
-			primaryKeys := GetPrimaryColumns(entityModel)
+			primaryKeys := GetPrimaryColumns(db, entityModel)
 			if len(primaryKeys) > 0 && strings.Contains(result.ErrorMessage, ".PRIMARY'") {
 				result.Columns = primaryKeys
 			} else {
 				// Cố gắng trích xuất cột từ thông báo lỗi (cho unique index khác)
-				indexCols := GetColumnsGroupedByIndex(entityModel)
+				indexCols := GetColumnsGroupedByIndex(db, entityModel)
 				parts := strings.Split(result.ErrorMessage, "for key '")
 				if len(parts) > 1 {
 					keyPart := parts[1]
@@ -248,7 +318,7 @@ func AnalizeError(db *gorm.DB, entityModel interface{}, err error) *ErrorAnalysi
 				}
 			}
 			// Lấy danh sách các cột required từ tag (có thể chính xác hơn)
-			requiredFromTag := GetRequiredColumns(entityModel)
+			requiredFromTag := GetRequiredColumns(db, entityModel)
 			if len(result.Columns) == 0 && len(requiredFromTag) > 0 {
 				result.Columns = requiredFromTag
 			}
