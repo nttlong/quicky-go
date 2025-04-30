@@ -1,26 +1,35 @@
 package user
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // models/user/user.go
 
 type User struct {
-	ID        int64     `json:"id"`
+	ID        uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	FirstName string    `json:"first_name"`
 	LastName  string    `json:"last_name"`
 	Email     string    `json:"email" binding:"required,email"`
-	Password  string    `json:"password" binding:"required,min=6"`
+	Password  string    `json:"-" gorm:"not null"` // Lưu bản hash, không hiển thị trong JSON
+	Salt      string    `json:"-" gorm:"not null"` // Lưu salt, không hiển thị trong JSON
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Validate kiểm tra tính hợp lệ của User (ví dụ đơn giản)
-func (u *User) Validate() error {
-	if u.FirstName == "" || u.LastName == "" {
-		return fmt.Errorf("first and last name cannot be empty")
-	}
-	return nil
+func HashPasswordWithSalt(password, salt string) (string, error) {
+	// **LƯU Ý QUAN TRỌNG:** Trong ứng dụng thực tế, bạn NÊN sử dụng bcrypt thay vì cách này.
+	// bcrypt tự động tạo salt an toàn và tích hợp nó vào hash.
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password+salt), bcrypt.DefaultCost)
+	return string(hashedPassword), err
+}
+
+// comparePasswordWithSalt so sánh mật khẩu đã cho với mật khẩu băm và salt đã lưu trữ
+func ComparePasswordWithSalt(password, hashedPassword, salt string) error {
+	// **LƯU Ý QUAN TRỌNG:** Tương tự, trong ứng dụng thực tế, bạn NÊN sử dụng bcrypt.CompareHashAndPassword.
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password+salt))
+	return err
 }

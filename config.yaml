@@ -8,9 +8,9 @@ db_:
   dbSchema: public
 db:
   dbType: mysql
-  dbName: my_database
-  dbUser: my_user
-  dbPassword: my_password
+  dbName: hrm
+  dbUser: root
+  dbPassword: 123456
   dbHost: localhost
   dbPort: 3306
   dbSchema: public
