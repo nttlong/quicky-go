@@ -7,10 +7,13 @@ db_:
   dbPort: 5432
   dbSchema: public
 db:
-  dbType: mysql
-  dbName: saas
-  dbUser: root
-  dbPassword: 123456
-  dbHost: localhost
-  dbPort: 3306
-  dbSchema: public
+  type: mysql
+  name: saas
+  user: root
+  password: 123456
+  host: localhost
+  port: 3306
+server:
+  port: 8080
+  host: 0.0.0.0
+
