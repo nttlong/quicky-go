@@ -3,6 +3,8 @@ package repo_test
 import (
 	"fmt"
 	"testing"
+	"vngom/models/account"
+	"vngom/models/department"
 	"vngom/repo"
 )
 
@@ -20,11 +22,8 @@ func TestRepoFactory(t *testing.T) {
 }
 func TestGetFullEntityNameOfRepoFactory(t *testing.T) {
 	repoFactory := repo.NewRepoFactory()
-	type TestEntity struct {
-		ID   int    "gorm:column:id"
-		Name string "gorm:column:name"
-	}
-	f := repoFactory.GetFullEntityName(&TestEntity{})
+
+	f := repoFactory.GetFullEntityName(&account.Account{})
 	fmt.Println(f)
 	t.Log(f)
 }
@@ -48,4 +47,41 @@ func TestGetColumOfRepoFactory(t *testing.T) {
 	}
 	fmt.Println(f)
 	t.Log(f)
+}
+func TestGetRepoFromRepoFactory(t *testing.T) {
+	repoFactory := repo.NewRepoFactory()
+	repoFactory.ConfigDb(
+		"mysql",
+		"localhost",
+		3306,
+		"root",
+		"123456",
+	)
+	repoFactory.PingDb()
+	repo, e := repoFactory.Get("test")
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(repo)
+}
+func TestAutomigrateEntry(t *testing.T) {
+	repoFactory := repo.NewRepoFactory()
+	repoFactory.ConfigDb(
+		"mysql",
+		"localhost",
+		3306,
+		"root",
+		"123456",
+	)
+	repoFactory.PingDb()
+	repoDb, err := repoFactory.Get("TestAutomigrateEntry")
+	if err != nil {
+		t.Error(err)
+	}
+
+	e := repoDb.AutoMigrate(&department.Department{})
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(e)
 }

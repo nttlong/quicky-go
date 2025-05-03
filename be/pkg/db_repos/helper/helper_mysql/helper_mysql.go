@@ -358,7 +358,7 @@ func (r *RepositoryMySql) Update(entity interface{}) *info.DataActionError {
 func (r *RepositoryMySql) Delete(entity interface{}) *info.DataActionError {
 	panic("unimplemented")
 }
-func (r *RepositoryMySql) AutoMigrate(entity interface{}) error {
+func (r *RepositoryMySql) Find(entity interface{}) error {
 	err := r.db.AutoMigrate(entity)
 	if err != nil {
 		return err

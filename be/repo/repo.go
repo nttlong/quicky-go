@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"vngom/repo/repo_mysql"
 	"vngom/repo/repo_types"
 
 	"gorm.io/driver/mysql"
@@ -21,7 +22,8 @@ type IRepo interface {
 }
 
 type IRepoFactory interface {
-	Get(dbName string) (*IRepo, error)
+	// Get returns a repo for the given database name. it also creates the database if it does not exist.
+	Get(dbName string) (IRepo, error)
 	/// SetAppDbDriverName sets the driver name for the app database.
 	SetAppDbDriverName(driverName string)
 	ConfigDb(driverName string, host string, port int, username string, password string)
@@ -29,6 +31,7 @@ type IRepoFactory interface {
 	PingDb()
 	GetFullEntityName(entity interface{}) string
 	GetColumOfEntity(entity interface{}) ([]repo_types.Column, error)
+	CreateDatabaseIfNotExists(dbName string) error
 }
 
 // ==============================
@@ -41,9 +44,56 @@ type RepoFactory struct {
 	appDbPassword   string
 }
 
-func (rf *RepoFactory) Get(dbName string) (*IRepo, error) {
-	// TODO: implement
-	return nil, nil
+// caceh for repo
+var repoCache = make(map[string]IRepo)
+var repoCacheMutex = &sync.RWMutex{}
+
+func (rf *RepoFactory) CreateDatabaseIfNotExists(dbName string) error {
+
+	switch rf.appDbDriverName {
+	case "mysql":
+		dns := rf.GetConectionStringNoDatabase()
+		err := CreateDatabaseInMySQL(dns, dbName)
+		return err
+
+	case "postgres":
+		panic("not implemented for postgres")
+	default:
+		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
+	}
+}
+func (rf *RepoFactory) Get(dbName string) (IRepo, error) {
+
+	// check if the repo is already created
+	repoCacheMutex.RLock()
+	if repo, exists := repoCache[dbName]; exists {
+		repoCacheMutex.RUnlock()
+		return repo, nil
+	}
+	repoCacheMutex.RUnlock()
+	// lock the cache for writing
+	repoCacheMutex.Lock()
+
+	err := rf.CreateDatabaseIfNotExists(dbName)
+	if err != nil {
+		repoCacheMutex.Unlock()
+		return nil, err
+	}
+	// create a new repo
+	repo, err := NewRepo(dbName,
+		rf.appDbDriverName,
+		rf.appDbHost,
+		rf.appDbPort,
+		rf.appDbUsername, rf.appDbPassword)
+	if err != nil {
+		repoCacheMutex.Unlock()
+		return nil, err
+	}
+	// add the repo to the cache
+	repoCache[dbName] = repo
+	// unlock the cache
+	repoCacheMutex.Unlock()
+	return repo, nil
 }
 
 func (rf *RepoFactory) SetAppDbDriverName(driverName string) {
@@ -146,6 +196,37 @@ func (rf *RepoFactory) GetColumOfEntity(enty interface{}) ([]repo_types.Column, 
 func NewRepoFactory() IRepoFactory {
 	return &RepoFactory{}
 }
+func NewRepo(
+	dbName string,
+	driverName string,
+	host string,
+	port int,
+	username string,
+	password string,
+) (IRepo, error) {
+	switch driverName {
+	case "mysql":
+		dsn := fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			username,
+			password,
+
+			host,
+			port,
+			dbName)
+		db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		if err != nil {
+			return nil, err
+		}
+		return &repo_mysql.RepoMysql{
+			Db: db,
+		}, nil
+	case "postgres":
+		panic("not implemented for postgres")
+	default:
+		panic(fmt.Sprintf("unsupported driver: %s", driverName))
+	}
+}
 func GoTypeToSQLType(typ reflect.Type) string {
 	switch typ.Kind() {
 	case reflect.String:
@@ -247,4 +328,40 @@ func ExtractLength(sqlType string) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+var lockCreateDatabase = &sync.RWMutex{}
+var CacheCreateDatabase = make(map[string]bool)
+
+func CreateDatabaseInMySQL(dsn string, dbName string) error {
+	lockCreateDatabase.RLock()
+	if _, exists := CacheCreateDatabase[dbName]; exists {
+		lockCreateDatabase.RUnlock()
+		return nil
+	}
+	lockCreateDatabase.RUnlock() // Move RUnlock here
+
+	dsn += "mysql"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		sqlDB, _ := db.DB() // Get the underlying sql.DB
+		if sqlDB != nil {
+			sqlDB.Close() // Close the database connection
+		}
+	}()
+
+	// create database
+	err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName)).Error
+	if err != nil {
+		return err
+	}
+	fmt.Println("Database created successfully")
+	// add to cache
+	lockCreateDatabase.Lock()
+	CacheCreateDatabase[dbName] = true
+	lockCreateDatabase.Unlock()
+	return nil
 }

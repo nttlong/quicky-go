@@ -7,7 +7,7 @@ import (
 )
 
 type BaseModel struct {
-	ID uuid.UUID `gorm:"type:char(36);primaryKey"`
+	ID uuid.UUID `gorm:"type:char(36);primaryKey;column:ID"`
 
 	CreatedOn  time.Time `gorm:"index;column:CreatedOn"`
 	ModifiedOn time.Time `gorm:"index;column:ModifiedOn"`

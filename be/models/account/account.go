@@ -1,7 +1,7 @@
 package account
 
 import (
-	"quicky-go/models/bases"
+	"vngom/models/bases"
 
 	"golang.org/x/crypto/bcrypt"
 )

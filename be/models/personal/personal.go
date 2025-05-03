@@ -5,7 +5,7 @@ package personal
 import (
 	"time"
 
-	"quicky-go/models/bases"
+	"vngom/models/bases"
 
 	_ "github.com/jinzhu/gorm"
 )
@@ -13,14 +13,18 @@ import (
 // PersonalInfo represents the personal information of a user.
 type PersonalInfo struct {
 	bases.BaseModel
-	FirstName string `json:"first_name" gorm:"type:varchar(100);index"`
-	LastName  string `json:"last_name" gorm:"type:varchar(100);index"`
+	FirstName string `json:"first_name" gorm:"type:varchar(100);index";column:FirstName`
+	LastName  string `json:"last_name" gorm:"type:varchar(100);index";column:LastName`
 
-	DateOfBirth *time.Time `json:"date_of_birth"`
-	Gender      string     `json:"gender" gorm:"type:varchar(10);index"`
-	Address     string     `json:"address" gorm:"type:varchar(255)"`
-	PhoneNumber string     `json:"phone_number" gorm:"type:varchar(20);index"`
-	Nationality string     `json:"nationality" gorm:"type:varchar(50)"`
-	BirthPlace  string     `json:"birth_place" gorm:"type:varchar(100)"`
+	DateOfBirth *time.Time `json:"date_of_birth;";column:DateOfBirth;index`
+	Gender      string     `json:"gender" gorm:"type:varchar(10);index";column:Gender`
+	Address     string     `json:"address" gorm:"type:varchar(255)";column:Address"`
+	PhoneNumber string     `json:"phone_number" gorm:"type:varchar(20);index";column:PhoneNumber`
+	Nationality string     `json:"nationality" gorm:"type:varchar(50)";column:Nationality`
+	BirthPlace  string     `json:"birth_place" gorm:"type:varchar(100)";column:BirthPlace`
 	// Add other relevant personal information fields here
+}
+
+func (d *PersonalInfo) TableName() string {
+	return "PersonalInfo"
 }
