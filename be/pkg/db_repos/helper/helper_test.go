@@ -1,8 +1,8 @@
 package helper_test
 
 import (
-	"quicky-go/pkg/db_repos/helper"
 	"testing"
+	"vngom/pkg/db_repos/helper"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -90,6 +90,51 @@ func Test_GetTypeNameOfEntity(t *testing.T) {
 	typeName := h.GetTypeNameOfEntity(&Account{})
 	assert.Equal(t, "Account", typeName)
 
+}
+
+// test GetDb
+func Test_GetDb(t *testing.T) {
+	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
+	h := helper.GetHelper("mysql")
+	db, err := h.GetDb("test_db")
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, "test_db", db.Name())
+}
+func Test_Get_GetRepo(t *testing.T) {
+	// use gorm create model
+	helper.SetAppDbDriverName("mysql")
+	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
+	repo, err := helper.GetRepo("test_db")
+	if err != nil {
+		panic(err)
+	}
+	assert.NotEmpty(t, repo)
+}
+func Test_Insert(t *testing.T) {
+	// use gorm create model
+	helper.SetAppDbDriverName("mysql")
+	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
+	repo, err := helper.GetRepo("test_db")
+	if err != nil {
+		panic(err)
+	}
+	type TestModel struct {
+		ID   int    `gorm:"column:id;primary_key"`
+		Name string `gorm:"column:name;index:idx_name"`
+		Age  int    `gorm:"column:age"`
+	}
+
+	actioRrr := repo.Insert(&TestModel{
+		ID:   1,
+		Name: "test",
+		Age:  18,
+	})
+	if err != nil {
+		t.Error(actioRrr)
+	}
+	assert.Equal(t, "Insert", actioRrr.Action)
 }
 
 // 	helper := helper_mysql.HelperMysql{

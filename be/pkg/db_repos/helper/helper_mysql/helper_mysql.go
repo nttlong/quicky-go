@@ -40,6 +40,12 @@ var CacheColumnInfo = make(map[string][]info.Column)
 // cacheMutex bảo vệ CacheColumnInfo khỏi truy cập đồng thời
 var cacheMutex sync.RWMutex
 
+// cache gorm.DB
+var CacheGormDB = make(map[string]*gorm.DB)
+
+// lock cache gorm.DB
+var lockCacheGormDB = sync.RWMutex{}
+
 func (m *HelperMysql) GetTypeNameOfEntity(entity interface{}) string {
 	typ := reflect.TypeOf(entity)
 	if typ.Kind() == reflect.Ptr {
@@ -293,3 +299,72 @@ func extractLength(sqlType string) (int, bool) {
 	}
 	return 0, false
 }
+func (m *HelperMysql) GetDb(dbName string) (*gorm.DB, error) {
+	//check if db connection is already cached
+	lockCacheGormDB.RLock()
+	if cached, exists := CacheGormDB[dbName]; exists {
+		lockCacheGormDB.RUnlock()
+		return cached, nil
+	}
+	lockCacheGormDB.RUnlock()
+	//create new db connection
+	dsn, err := m.GetDbConnectionString(dbName)
+	if err != nil {
+		return nil, err
+	}
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	//add to cache
+	lockCacheGormDB.Lock()
+	CacheGormDB[dbName] = db
+	lockCacheGormDB.Unlock()
+	return db, nil
+
+}
+
+type RepositoryMySql struct {
+	db     *gorm.DB
+	DbName string
+}
+
+func (r *RepositoryMySql) SetDb(db *gorm.DB, dbName string) error {
+	r.db = db
+	r.DbName = dbName
+	return nil
+}
+func (r *RepositoryMySql) Insert(entity interface{}) *info.DataActionError {
+	// use gorm to insert entity
+	//r.db.Model(entity).Save()
+	ret := r.db.Create(entity)
+	// check if error
+
+	if ret.Error != nil {
+		return &info.DataActionError{
+			Err:          ret.Error,
+			Action:       "insert",
+			Code:         info.Duplicate,
+			RefColumns:   nil,
+			RefTableName: "",
+		}
+	}
+	return nil
+
+}
+func (r *RepositoryMySql) Update(entity interface{}) *info.DataActionError {
+	panic("unimplemented")
+}
+func (r *RepositoryMySql) Delete(entity interface{}) *info.DataActionError {
+	panic("unimplemented")
+}
+func (r *RepositoryMySql) AutoMigrate(entity interface{}) error {
+	err := r.db.AutoMigrate(entity)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+// use gorm to find all entity

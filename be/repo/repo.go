@@ -1,194 +1,250 @@
 package repo
 
 import (
-	"database/sql"
 	"fmt"
-	"log"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
 
-	"quicky-go/configs"
-	"quicky-go/models"
-
-	qErr "quicky-go/repo/errors"
+	"vngom/repo/repo_types"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-// global variable for gorm db connection used in all package
-var Repo *gorm.DB
+type IRepo interface {
+	Insert(data interface{}) repo_types.DataActionError
+	Update(data interface{}) repo_types.DataActionError
+	Delete(data interface{}) repo_types.DataActionError
+	AutoMigrate(data interface{}) error
+}
 
-// hash dict strore db connection and tenant db connection
-var RepoHash map[string]*gorm.DB = make(map[string]*gorm.DB)
+type IRepoFactory interface {
+	Get(dbName string) (*IRepo, error)
+	/// SetAppDbDriverName sets the driver name for the app database.
+	SetAppDbDriverName(driverName string)
+	ConfigDb(driverName string, host string, port int, username string, password string)
+	GetConectionStringNoDatabase() string
+	PingDb()
+	GetFullEntityName(entity interface{}) string
+	GetColumOfEntity(entity interface{}) ([]repo_types.Column, error)
+}
 
-// hash map connection string for tenant db
-var CnnStrHash map[string]*string = make(map[string]*string)
+// ==============================
 
-func GetConnectionString(tenanDb string) (*string, error) {
-	//if tenant db connection string exist in hash map return connection string
-	if CnnStrHash[tenanDb] != nil {
-		return CnnStrHash[tenanDb], nil
+type RepoFactory struct {
+	appDbDriverName string
+	appDbHost       string
+	appDbPort       int
+	appDbUsername   string
+	appDbPassword   string
+}
+
+func (rf *RepoFactory) Get(dbName string) (*IRepo, error) {
+	// TODO: implement
+	return nil, nil
+}
+
+func (rf *RepoFactory) SetAppDbDriverName(driverName string) {
+	rf.appDbDriverName = driverName
+
+}
+func (rf *RepoFactory) GetConectionStringNoDatabase() string {
+	// check all required fields are set
+	if rf.appDbDriverName == "" || rf.appDbHost == "" || rf.appDbPort == 0 || rf.appDbUsername == "" || rf.appDbPassword == "" {
+		panic("app db configuration is not set")
 	}
-	//create new connection string for tenant db
-	dsn, err := createDbIfNotExistDB(tenanDb)
+	switch rf.appDbDriverName {
+	case "mysql":
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/", rf.appDbUsername, rf.appDbPassword, rf.appDbHost, rf.appDbPort)
+	case "postgres":
+		return fmt.Sprintf("postgres://%s:%s@%s:%d/", rf.appDbUsername, rf.appDbPassword, rf.appDbHost, rf.appDbPort)
+	// TODO: implement
+	default:
+		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
+	}
+}
+func (rf *RepoFactory) ConfigDb(driverName string, host string, port int, username string, password string) {
+	rf.appDbDriverName = driverName
+	rf.appDbHost = host
+	rf.appDbPort = port
+	rf.appDbUsername = username
+	rf.appDbPassword = password
+
+}
+
+func (rf *RepoFactory) PingDb() {
+	switch rf.appDbDriverName {
+	case "mysql":
+		cnn := rf.GetConectionStringNoDatabase()
+		_, err := gorm.Open(mysql.Open(cnn), &gorm.Config{})
+		if err != nil {
+			panic(err)
+		}
+
+		// TODO: implement
+	case "postgres":
+		panic("not implemented for postgres")
+	// TODO: implement
+	default:
+		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
+	}
+
+}
+
+var CacheColumnInfo = make(map[string][]repo_types.Column)
+var cacheMutex = &sync.RWMutex{}
+
+func (rf *RepoFactory) GetFullEntityName(entity interface{}) string {
+	typ := reflect.TypeOf(entity)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		panic(fmt.Errorf("entity must be a struct, got %v", typ.Kind()))
+	}
+
+	// Kiểm tra cache
+	fullName := typ.String()
+	return fullName
+}
+
+func (rf *RepoFactory) GetColumOfEntity(enty interface{}) ([]repo_types.Column, error) {
+	// Kiểm tra enty và lấy type
+	typ := reflect.TypeOf(enty)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("enty must be a struct, got %v", typ.Kind())
+	}
+
+	// Kiểm tra cache
+	typeName := rf.GetFullEntityName(enty)
+	cacheMutex.RLock()
+	if cached, exists := CacheColumnInfo[typeName]; exists {
+		cacheMutex.RUnlock()
+		return cached, nil
+	}
+	cacheMutex.RUnlock()
+
+	// Tính toán danh sách cột
+	columns, err := ComputeColumns(typ)
 	if err != nil {
 		return nil, err
 	}
-	CnnStrHash[tenanDb] = dsn
-	return dsn, nil
 
+	// Lưu vào cache
+	cacheMutex.Lock()
+	CacheColumnInfo[typeName] = columns
+	cacheMutex.Unlock()
+
+	return columns, nil
 }
 
-// this function return connection string for tenant db without database name if tenant db not exist in database server it will create new database and return connection string for new database
-func createDbIfNotExistDB(tenanDb string) (*string, error) {
-	cfg := configs.Info.DB
-	var dsnNoDB string
-	var dsnWithDB string
-	var err error
-	var db *sql.DB
-
-	switch cfg.DBType {
-	case configs.DBTypeMySQL:
-		dsnNoDB = fmt.Sprintf("%s:%s@tcp(%s:%d)/", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort)
-		dsnWithDB = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, tenanDb)
-	case configs.DBTypePostgres:
-		dsnNoDB = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable", cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword)
-		dsnWithDB = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable search_path=%s", cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, tenanDb, cfg.DBSchema)
-	case configs.DBTypeSQLServer:
-		dsnNoDB = fmt.Sprintf("sqlserver://%s:%s@%s:%d", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort)
-		dsnWithDB = fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, tenanDb)
-		if cfg.DBSchema != "" {
-			dsnWithDB += fmt.Sprintf("&schema=%s", cfg.DBSchema)
+func NewRepoFactory() IRepoFactory {
+	return &RepoFactory{}
+}
+func GoTypeToSQLType(typ reflect.Type) string {
+	switch typ.Kind() {
+	case reflect.String:
+		return "text"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "number"
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "number"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Bool:
+		return "number"
+	case reflect.Struct:
+		if typ.String() == "time.Time" {
+			return "datetime"
 		}
-	default:
-		return nil, fmt.Errorf("unsupported database type: %s", cfg.DBType)
 	}
+	return "text" // Mặc định
+}
+func ComputeColumns(typ reflect.Type) ([]repo_types.Column, error) {
+	var columns []repo_types.Column
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
 
-	// Connect to the database server without specifying the database initially
-	db, err = sql.Open(string(cfg.DBType), dsnNoDB)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open connection to database server: %w", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database server: %w", err)
-	}
-	log.Println("Successfully connected to the database server.")
-
-	// Check if the database exists and create it if it doesn't
-	switch cfg.DBType {
-	case configs.DBTypeMySQL:
-		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", tenanDb))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create MySQL database '%s': %w", cfg.DBName, err)
+		// Bỏ qua field không xuất khẩu (private)
+		if !field.IsExported() {
+			continue
 		}
-		log.Printf("MySQL database '%s' checked/created successfully.", cfg.DBName)
-	case configs.DBTypePostgres:
-		var exists bool
-		err = db.QueryRow(fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='%s')", tenanDb)).Scan(&exists)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check if PostgreSQL database '%s' exists: %w", cfg.DBName, err)
-		}
-		if !exists {
-			_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", tenanDb))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create PostgreSQL database '%s': %w", tenanDb, err)
+
+		// Lấy tag gorm
+		gormTag := field.Tag.Get("gorm")
+		if gormTag == "" || strings.Contains(gormTag, "embedded") {
+			//checj if field is embedded struct
+			if field.Type.Kind() == reflect.Struct {
+				embeddedColumns, err := ComputeColumns(field.Type)
+				if err != nil {
+					return nil, err
+				}
+				columns = append(columns, embeddedColumns...)
 			}
-			log.Printf("PostgreSQL database '%s' created successfully.", tenanDb)
-		} else {
-			log.Printf("PostgreSQL database '%s' already exists.", tenanDb)
+			continue
 		}
-	case configs.DBTypeSQLServer:
-		var exists bool
-		err = db.QueryRow(fmt.Sprintf("SELECT CASE WHEN db_id('%s') IS NOT NULL THEN 1 ELSE 0 END", tenanDb)).Scan(&exists)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check if SQL Server database '%s' exists: %w", tenanDb, err)
+
+		col := repo_types.Column{
+			Name:      field.Name,
+			Type:      GoTypeToSQLType(field.Type),
+			AllowNull: true,
 		}
-		if !exists {
-			_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", tenanDb))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create SQL Server database '%s': %w", tenanDb, err)
+
+		// Phân tích tag gorm
+		tags := strings.Split(gormTag, ";")
+		for _, tag := range tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
 			}
-			log.Printf("SQL Server database '%s' created successfully.", cfg.DBName)
-		} else {
-			log.Printf("SQL Server database '%s' already exists.", cfg.DBName)
+			if strings.HasPrefix(tag, "column:") {
+				col.Name = strings.TrimPrefix(tag, "column:")
+			}
+			if strings.HasPrefix(tag, "type:") {
+				col.Type = strings.TrimPrefix(tag, "type:")
+				if length, ok := ExtractLength(col.Type); ok {
+					col.Length = &length
+				}
+			}
+			if tag == "not null" {
+				col.AllowNull = false
+			}
+			if tag == "unique" {
+				col.IsUnique = true
+			}
+			if strings.HasPrefix(tag, "index:") {
+				col.IndexName = strings.TrimPrefix(tag, "index:")
+			} else if tag == "index" {
+				col.IndexName = "idx_" + strings.ToLower(col.Name)
+			}
+			if tag == "primary_key" {
+				col.IsUnique = true
+			}
 		}
-	default:
-		// Should not reach here as the type is checked earlier
+
+		columns = append(columns, col)
 	}
 
-	// Optionally, you can now try to connect to the specific database
-	// dbWithDB, err := sql.Open(string(cfg.DBType), dsnWithDB)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to open connection to database '%s': %w", cfg.DBName, err)
-	// }
-	// defer dbWithDB.Close()
-	// if err := dbWithDB.Ping(); err != nil {
-	// 	return fmt.Errorf("failed to ping database '%s': %w", cfg.DBName, err)
-	// }
-	// log.Printf("Successfully connected and pinged database '%s'.", cfg.DBName)
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("no valid columns found in %v", typ.Name())
+	}
 
-	return &dsnWithDB, nil
+	return columns, nil
 }
-
-// / Create new repo connection to tenant db if not exist else return existing connection
-func GetRepo(tenanDb string) (*gorm.DB, error) {
-	//if tenant db connection exist in hash map return connection
-	if RepoHash[tenanDb] != nil {
-		return RepoHash[tenanDb], nil
-	}
-	//create new connection string for tenant db
-	dsn, err := createDbIfNotExistDB(tenanDb)
-	if err != nil {
-		return nil, err
-	}
-	//create new repo connection to tenant db
-	db, err := gorm.Open(mysql.Open(*dsn), &gorm.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database '%s': %w", tenanDb, err)
-	}
-	RepoHash[tenanDb] = db
-	if tenanDb != configs.Info.DB.DBName {
-		err := models.AutoMigrate(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to auto migrate database '%s': %w", tenanDb, err)
-		}
-	} else {
-		err := models.AutoMigrateSystemDB(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to auto migrate database '%s': %w", tenanDb, err)
+func ExtractLength(sqlType string) (int, bool) {
+	start := strings.Index(sqlType, "(")
+	end := strings.Index(sqlType, ")")
+	if start != -1 && end != -1 && start < end {
+		lengthStr := sqlType[start+1 : end]
+		length, err := strconv.Atoi(lengthStr)
+		if err == nil {
+			return length, true
 		}
 	}
-
-	return db, nil
-
-}
-func GetManagerRepo() *gorm.DB {
-
-	ret, err := GetRepo(configs.Info.DB.DBName)
-	if err != nil {
-		panic(err)
-	}
-	return ret
-
-}
-func Insert(dbName string, data interface{}) *qErr.ErrorAnalysisResult {
-	db, err := GetRepo(dbName)
-	if err != nil {
-		return qErr.AnalizeError(db, data, err)
-	}
-	result := db.Create(data)
-	if result.Error != nil {
-		return qErr.AnalizeError(db, data, result.Error)
-	}
-	return nil
-}
-func init() {
-
-	cfg := configs.Info.DB
-	_, err := createDbIfNotExistDB(cfg.DBName)
-	if err != nil {
-		panic(err)
-	}
-
+	return 0, false
 }

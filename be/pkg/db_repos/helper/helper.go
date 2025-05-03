@@ -3,8 +3,11 @@ package helper
 import (
 	"errors"
 	"fmt"
-	"quicky-go/pkg/db_repos/helper/helper_mysql"
-	"quicky-go/pkg/db_repos/helper/info"
+	"sync"
+	"vngom/pkg/db_repos/helper/helper_mysql"
+	"vngom/pkg/db_repos/helper/info"
+
+	"gorm.io/gorm"
 )
 
 // IHelper is an interface for database helper
@@ -45,6 +48,7 @@ type IHelper interface {
 	* @param enty the entity (is entity or pointer to entity) make sure GORM can identify entity
 	 */
 	GetTypeNameOfEntity(enty interface{}) string
+	GetDb(dbName string) (*gorm.DB, error)
 }
 
 // cache for the helper instance
@@ -104,3 +108,67 @@ func GetHelper(driverName string) IHelper {
 	}
 	return helperCache[driverName]
 }
+
+type IRepository interface {
+	SetDb(db *gorm.DB, dbName string) error
+	Insert(entity interface{}) *info.DataActionError
+	Update(entity interface{}) *info.DataActionError
+	Delete(entity interface{}) *info.DataActionError
+	AutoMigrate(entity interface{}) error
+}
+
+// Global variable to store the name of the database driver used by the application.
+var AppDbDriverName *string
+
+// SetAppDbDriverName sets the name of the database driver used by the application.
+func SetAppDbDriverName(driverName string) {
+	AppDbDriverName = &driverName
+}
+
+// Cache for the repository instance
+var repoCache map[string]IRepository = make(map[string]IRepository)
+
+// lock for the repoCache
+var repoCacheLock = new(sync.RWMutex)
+
+func GetRepo(dbName string) (IRepository, error) {
+
+	// check if the repository is already created
+	repoCacheLock.RLock()
+	if repoCache[dbName] != nil {
+		repoCacheLock.RUnlock()
+		return repoCache[dbName], nil
+	}
+	repoCacheLock.RUnlock()
+
+	// check AppDbDriverName
+	if AppDbDriverName == nil {
+		panic("AppDbDriverName is not set, please call SetAppDbDriverName() function before using GetRepo() function")
+	}
+	// get the helper instance
+	helper := GetHelper(*AppDbDriverName)
+	err := helper.CreateDatabase(dbName)
+	if err != nil {
+		return nil, err
+	}
+	db, errGetDb := helper.GetDb(dbName)
+	if errGetDb != nil {
+		return nil, errGetDb
+	}
+	// create a new repository instance
+
+	repo := &helper_mysql.RepositoryMySql{}
+	repo.SetDb(db, dbName)
+	// set the repository instance to cache
+	repoCacheLock.Lock()
+	repoCache[dbName] = repo
+	repoCacheLock.Unlock()
+	return repo, nil
+
+	// cache the repository instance
+
+}
+
+// get the connection string for the given database name
+
+//check if the helper is already created
