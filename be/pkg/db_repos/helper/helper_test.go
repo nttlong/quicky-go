@@ -65,6 +65,7 @@ func Test_GetColumnInfo(t *testing.T) {
 	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
 	h := helper.GetHelper("mysql")
 	columns, err := h.GetColumns(&Account{})
+
 	if err != nil {
 		t.Error(err)
 	}
