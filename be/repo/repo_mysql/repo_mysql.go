@@ -14,14 +14,23 @@ type RepoMysql struct {
 	Db *gorm.DB
 }
 
-func (r *RepoMysql) Insert(data interface{}) repo_types.DataActionError {
-	panic("implement")
+func (r *RepoMysql) Insert(data interface{}) *repo_types.DataActionError {
+	err := r.AutoMigrate(data)
+	if err != nil {
+		return &repo_types.DataActionError{Err: err}
+	}
+	err = r.Db.Create(data).Error
+
+	if err != nil {
+		return &repo_types.DataActionError{Err: err}
+	}
+	return nil
 
 }
-func (r *RepoMysql) Update(data interface{}) repo_types.DataActionError {
+func (r *RepoMysql) Update(data interface{}) *repo_types.DataActionError {
 	panic("implement")
 }
-func (r *RepoMysql) Delete(data interface{}) repo_types.DataActionError {
+func (r *RepoMysql) Delete(data interface{}) *repo_types.DataActionError {
 	panic("implement")
 }
 

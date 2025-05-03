@@ -15,9 +15,9 @@ import (
 )
 
 type IRepo interface {
-	Insert(data interface{}) repo_types.DataActionError
-	Update(data interface{}) repo_types.DataActionError
-	Delete(data interface{}) repo_types.DataActionError
+	Insert(data interface{}) *repo_types.DataActionError
+	Update(data interface{}) *repo_types.DataActionError
+	Delete(data interface{}) *repo_types.DataActionError
 	AutoMigrate(data interface{}) error
 }
 

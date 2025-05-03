@@ -3,9 +3,14 @@ package repo_test
 import (
 	"fmt"
 	"testing"
+	"time"
 	"vngom/models/account"
+	"vngom/models/bases"
 	"vngom/models/department"
+	"vngom/models/employee"
 	"vngom/repo"
+
+	"github.com/google/uuid"
 )
 
 func TestRepoFactory(t *testing.T) {
@@ -84,4 +89,54 @@ func TestAutomigrateEntry(t *testing.T) {
 		t.Error(e)
 	}
 	t.Log(e)
+}
+
+// test insert data
+func TestInsertData(t *testing.T) {
+	repoFactory := repo.NewRepoFactory()
+	repoFactory.ConfigDb(
+		"mysql",
+		"localhost",
+		3306,
+		"root",
+		"123456",
+	)
+	repoFactory.PingDb()
+	repoDb, err := repoFactory.Get("TestInsertData")
+	if err != nil {
+		t.Error(err)
+	}
+
+	d := department.Department{
+		Code:       "test",
+		Name:       "test",
+		CreatedOn:  time.Now().UTC(),
+		ModifiedOn: time.Now().UTC(),
+	}
+
+	e := repoDb.Insert(&d)
+	for i := 0; i < 10; i++ {
+		e = repoDb.Insert(&employee.Employee{
+			BaseModel: bases.BaseModel{
+				ID:         uuid.New(),
+				CreatedOn:  time.Now().UTC(),
+				ModifiedOn: time.Now().UTC(),
+			},
+			Code:         fmt.Sprintf("code-%d", i), //code-0, code-1, code-2, code-3, code-4, code-5, code-6, code-7, code-8, code-9
+			FirstName:    "test",
+			LastName:     "test",
+			Gender:       "test",
+			JoinDate:     time.Now().UTC(),
+			DepartmentID: &d.ID,
+			Personal:     nil,
+		})
+		if e != nil {
+			t.Error(e)
+			return
+		}
+	}
+	if e != nil {
+		t.Error(e)
+	}
+
 }
