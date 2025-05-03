@@ -13,6 +13,8 @@ type IHelper interface {
 	Connect() error
 
 	GetConnectionString() (string, error)
+	GetDbConnectionString(dbName string) (string, error)
+	//onetime call in the whole lifecycle of the application
 	CreateDatabase(dbName string) error
 	GetColumns(enty interface{}) ([]info.Column, error)
 	GetTypeNameOfEntity(enty interface{}) string

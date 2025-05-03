@@ -17,6 +17,16 @@ func Test_GetConnectionString(t *testing.T) {
 	}
 	assert.Equal(t, "root:123456@tcp(localhost:3306)/", cnn)
 }
+func Test_GetDbConnectionString(t *testing.T) {
+	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
+	h := helper.GetHelper("mysql")
+	expectedCnn := "root:123456@tcp(localhost:3306)/test_db?charset=utf8mb4&parseTime=True&loc=Local"
+	cnn, err := h.GetDbConnectionString("test_db")
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, expectedCnn, cnn)
+}
 func Test_GetHelper(t *testing.T) {
 	helper.CreateHelper("mysql", "localhost", "3306", "root", "123456")
 	h := helper.GetHelper("mysql")

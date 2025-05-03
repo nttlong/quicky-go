@@ -22,6 +22,12 @@ type HelperMysql struct {
 	Password string
 }
 
+// cache db connection string
+var DbConnectionString map[string]string = make(map[string]string)
+
+// lock db
+var lockDbConnectionString = sync.RWMutex{}
+
 // cache thao tác tạo database| cache create database
 
 var CacheCreateDatabase = make(map[string]bool)
@@ -57,6 +63,52 @@ func (m *HelperMysql) GetConnectionString() (string, error) {
 		m.connectionString = m.User + ":" + m.Password + "@tcp(" + m.Host + ":" + m.Port + ")/"
 	}
 	return m.connectionString, nil
+}
+func (m *HelperMysql) GetDbConnectionString(dbName string) (string, error) {
+	lockDbConnectionString.RLock()
+	if cached, exists := DbConnectionString[m.connectionString]; exists {
+		lockDbConnectionString.RUnlock()
+		return cached, nil
+	}
+	lockDbConnectionString.RUnlock()
+	if m.User == "" || m.Password == "" || m.Host == "" || m.Port == "" {
+		return "", errors.New("User, Password, Host, Port must be set")
+
+	}
+	//try create database if not exists
+	err := m.CreateDatabase(dbName)
+	if err != nil {
+		return "", err
+	}
+
+	//create  mysql db connection to db
+	// use m.Host, m.Port, m.User, m.Password and dbName to create connection string
+	//"root:123456@tcp(localhost:3306)/test_db?charset=utf8mb4&parseTime=True&loc=Local"
+
+	cnn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", m.User, m.Password, m.Host, m.Port, dbName)
+	// try connect to db
+	db, err := gorm.Open(mysql.Open(cnn), &gorm.Config{})
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		sqlDB, _ := db.DB() // Get the underlying sql.DB
+		if sqlDB != nil {
+			sqlDB.Close() // Close the database connection
+		}
+	}()
+	// check if connection is successful or not
+	err = db.Exec(fmt.Sprintf("USE %s", dbName)).Error
+	if err != nil {
+		return "", err
+	}
+	fmt.Println("Connected to database", dbName)
+	// add to cache
+	lockDbConnectionString.Lock()
+	DbConnectionString[m.connectionString] = cnn
+	lockDbConnectionString.Unlock()
+	return cnn, nil
+
 }
 func (m *HelperMysql) Connect() error {
 	//create  mysql db connection
