@@ -19,6 +19,7 @@ type IRepo interface {
 	Update(data interface{}) *repo_types.DataActionError
 	Delete(data interface{}) *repo_types.DataActionError
 	AutoMigrate(data interface{}) error
+	GetError(err error, typ reflect.Type, tableName string, action string) *repo_types.DataActionError
 }
 
 type IRepoFactory interface {

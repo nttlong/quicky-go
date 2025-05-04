@@ -14,6 +14,38 @@ type RepoMysql struct {
 	Db *gorm.DB
 }
 
+func (r *RepoMysql) GetError(err error, typ reflect.Type, tableName string, action string) *repo_types.DataActionError {
+	//"Duplicate entry '00000000-0000-0000-0000-000000000000' for key 'tenants.PRIMARY'"
+	errStr := err.Error()
+	if strings.Contains(errStr, "Duplicate entry") {
+		ret := &repo_types.DataActionError{
+			Err:          err,
+			Code:         repo_types.Duplicate,
+			RefTableName: tableName,
+			Action:       action,
+		}
+
+		if strings.Contains(errStr, ".PRIMARY") {
+			cols, ex := repo_types.ComputeColumns(typ)
+			if ex != nil {
+				return &repo_types.DataActionError{
+					Err:  err,
+					Code: repo_types.Unknown,
+				}
+			}
+			ret.RefColumns = make([]string, 0)
+			//select the primary key column in cols
+			for _, col := range cols {
+				if col.IsUnique {
+					ret.RefColumns = append(ret.RefColumns, col.Name)
+				}
+			}
+
+		}
+		return ret
+	}
+	panic(errStr)
+}
 func (r *RepoMysql) Insert(data interface{}) *repo_types.DataActionError {
 	err := r.AutoMigrate(data)
 	if err != nil {
@@ -22,7 +54,20 @@ func (r *RepoMysql) Insert(data interface{}) *repo_types.DataActionError {
 	err = r.Db.Create(data).Error
 
 	if err != nil {
-		return &repo_types.DataActionError{Err: err}
+		tableName := repo_types.GetTableNameOfEntity(data)
+		typ, errT := repo_types.GetReflectType(data)
+		if errT != nil {
+			return &repo_types.DataActionError{Err: err}
+		}
+
+		// if typ.Kind() == reflect.Ptr {
+		// 	typ = typ.Elem()
+		// 	tableName = typ.String()
+		// }
+		// if typ.Kind() != reflect.Struct {
+		// 	return &repo_types.DataActionError{Err: err}
+		// }
+		return r.GetError(err, typ, tableName, "insert")
 	}
 	return nil
 

@@ -1,12 +1,19 @@
 package repo_types
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+)
 
-/**
-* Struct Column để lưu thông tin của một cột trong một bảng.
- storegae information of a column in a table.
-* Lưu các thông tin như tên cột, kiểu dữ liệu, kích thước, có thể null hay không, tên index, có unique hay không.
-* Store information like column name, data type, size, can be null or not, index name, have unique or not.
+/*
+*
+  - Struct Column để lưu thông tin của một cột trong một bảng.
+    storegae information of a column in a table.
+  - Lưu các thông tin như tên cột, kiểu dữ liệu, kích thước, có thể null hay không, tên index, có unique hay không.
+  - Store information like column name, data type, size, can be null or not, index name, have unique or not.
 */
 type Column struct {
 	/* Tên cột, column name (property name of entity) */
@@ -28,9 +35,10 @@ type DbAction int
 // Định nghĩa các hằng số cho các giá trị enum.
 // Define enum values for ErrorCode and DbAction.
 const (
+	Unknown ErrorCode = iota // Lỗi không xác định, Unknown error
 	// Lỗi trùng lặp, Duplicate error
 	// Duplicate error
-	Duplicate ErrorCode = iota // iota tự động tăng giá trị của mỗi hằng số
+	Duplicate // iota tự động tăng giá trị của mỗi hằng số
 	// Lỗi tham chiếu, Reference error, lỗ này thường gây ra do relation ship giữa các bảng.
 	// Reference error, usually caused by relation ship between tables.
 
@@ -110,4 +118,133 @@ func (e *DataActionError) Error() string {
 		msg += " RefTableName: " + e.RefTableName
 	}
 	return msg
+}
+func GoTypeToSQLType(typ reflect.Type) string {
+	switch typ.Kind() {
+	case reflect.String:
+		return "text"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "number"
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "number"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Bool:
+		return "number"
+	case reflect.Struct:
+		if typ.String() == "time.Time" {
+			return "datetime"
+		}
+	}
+	return "text" // Mặc định
+}
+func ComputeColumns(typ reflect.Type) ([]Column, error) {
+
+	var columns []Column
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Bỏ qua field không xuất khẩu (private)
+		if !field.IsExported() {
+			continue
+		}
+
+		// Lấy tag gorm
+		gormTag := field.Tag.Get("gorm")
+		if gormTag == "" || strings.Contains(gormTag, "embedded") {
+			//checj if field is embedded struct
+			if field.Type.Kind() == reflect.Struct {
+				embeddedColumns, err := ComputeColumns(field.Type)
+				if err != nil {
+					return nil, err
+				}
+				columns = append(columns, embeddedColumns...)
+			}
+			continue
+		}
+
+		col := Column{
+			Name:      field.Name,
+			Type:      GoTypeToSQLType(field.Type),
+			AllowNull: true,
+		}
+
+		// Phân tích tag gorm
+		tags := strings.Split(gormTag, ";")
+		for _, tag := range tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			if strings.HasPrefix(tag, "column:") {
+				col.Name = strings.TrimPrefix(tag, "column:")
+			}
+			if strings.HasPrefix(tag, "type:") {
+				col.Type = strings.TrimPrefix(tag, "type:")
+				if length, ok := ExtractLength(col.Type); ok {
+					col.Length = &length
+				}
+			}
+			if tag == "not null" {
+				col.AllowNull = false
+			}
+			if tag == "unique" {
+				col.IsUnique = true
+			}
+			if strings.HasPrefix(tag, "index:") {
+				col.IndexName = strings.TrimPrefix(tag, "index:")
+			} else if tag == "index" {
+				col.IndexName = "idx_" + strings.ToLower(col.Name)
+			}
+			if tag == "primary_key" || strings.Contains(gormTag, ";primaryKey;") || strings.Contains(gormTag, ";primary_key;") {
+				col.IsUnique = true
+			}
+		}
+
+		columns = append(columns, col)
+	}
+
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("no valid columns found in %v", typ.Name())
+	}
+
+	return columns, nil
+}
+func ExtractLength(sqlType string) (int, bool) {
+	start := strings.Index(sqlType, "(")
+	end := strings.Index(sqlType, ")")
+	if start != -1 && end != -1 && start < end {
+		lengthStr := sqlType[start+1 : end]
+		length, err := strconv.Atoi(lengthStr)
+		if err == nil {
+			return length, true
+		}
+	}
+	return 0, false
+}
+func GetTypeNameOfEntity(entity interface{}) string {
+	typ := reflect.TypeOf(entity)
+	tableName := typ.String()
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+		tableName = typ.String()
+	}
+	return tableName
+}
+func GetTableNameOfEntity(entity interface{}) string {
+	tableName := GetTypeNameOfEntity(entity)
+	if strings.Contains(tableName, ".") {
+		tableName = strings.Split(tableName, ".")[1]
+	}
+	return tableName
+}
+func GetReflectType(entity interface{}) (reflect.Type, error) {
+	typ := reflect.TypeOf(entity)
+
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+		return typ, nil
+
+	}
+	return nil, errors.New("entity must be a pointer to struct")
 }

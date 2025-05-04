@@ -13,7 +13,7 @@ func Login(c fiber_wrapper.IAppContext) error {
 		return err
 	}
 	desc := fmt.Sprint("create tenant: %s", c.GetTenant())
-	tenantRepo.Insert(&tenants.Tenants{
+	dbErr := tenantRepo.Insert(&tenants.Tenants{
 		Name:        c.GetTenant(),
 		Description: desc,
 		Status:      1,
@@ -23,6 +23,9 @@ func Login(c fiber_wrapper.IAppContext) error {
 		CreatedOn:   time.Now().UTC(),
 		ModifiedOn:  time.Now().UTC(),
 	})
+	if dbErr != nil {
+		return c.GetApp().SendString(dbErr.Error())
+	}
 
 	return c.GetApp().SendString(c.GetTenant())
 	// tenant := c.Params("tenant") // Lấy giá trị của tham số tenant

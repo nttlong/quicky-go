@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 	"vngom/models/account"
@@ -10,6 +11,7 @@ import (
 	"vngom/models/employee"
 	"vngom/models/tenants"
 	"vngom/repo"
+	"vngom/repo/repo_types"
 
 	"github.com/google/uuid"
 )
@@ -34,7 +36,7 @@ func TestGetFullEntityNameOfRepoFactory(t *testing.T) {
 	t.Log(f)
 }
 func TestGetColumOfRepoFactory(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+
 	type BaseEntity struct {
 		Code   string `gorm:"type:varchar(191);uniqueIndex:idx_code,length:191;column:Code"`
 		Name   string `gorm:"type:varchar(191);column:Name"`
@@ -47,7 +49,15 @@ func TestGetColumOfRepoFactory(t *testing.T) {
 		Password string `gorm:"column:Password"`
 		Salt     string `json:"-" gorm:"not null;column:Salt"` // Lưu salt, không hiển thị trong JSON
 	}
-	f, e := repoFactory.GetColumOfEntity(&Account{})
+	var fv interface{} = &Account{}
+	typ := reflect.TypeOf(fv)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		t.Error("enty must be a struct")
+	}
+	f, e := repo_types.ComputeColumns(typ)
 	if e != nil {
 		t.Error(e)
 	}
