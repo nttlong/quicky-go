@@ -5,6 +5,8 @@ import (
 	"time"
 	"vngom/fiber_wrapper"
 	"vngom/models/tenants"
+
+	"github.com/google/uuid"
 )
 
 func Login(c fiber_wrapper.IAppContext) error {
@@ -14,6 +16,7 @@ func Login(c fiber_wrapper.IAppContext) error {
 	}
 	desc := fmt.Sprint("create tenant: %s", c.GetTenant())
 	dbErr := tenantRepo.Insert(&tenants.Tenants{
+		ID:          uuid.New(),
 		Name:        c.GetTenant(),
 		Description: desc,
 		Status:      1,

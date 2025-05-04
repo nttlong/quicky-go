@@ -199,6 +199,14 @@ func ComputeColumns(typ reflect.Type) ([]Column, error) {
 			if tag == "primary_key" || strings.Contains(gormTag, ";primaryKey;") || strings.Contains(gormTag, ";primary_key;") {
 				col.IsUnique = true
 			}
+			//tag=="uniqueIndex:idx_name,length:191"
+			if strings.Contains(tag, "uniqueIndex:") {
+
+				indexName := strings.Split(strings.Split(tag, ":")[1], ",")[0]
+				col.IndexName = indexName
+				col.IsUnique = true
+
+			}
 		}
 
 		columns = append(columns, col)

@@ -41,7 +41,28 @@ func (r *RepoMysql) GetError(err error, typ reflect.Type, tableName string, acti
 				}
 			}
 
+		} else {
+			// extract the index_name column name from the error message
+			// message "Error 1062 (23000): Duplicate entry 'test' for key 'tenants.idx_name'"
+			indexName := strings.Split(errStr, "'")[3]
+			indexName = strings.Split(indexName, ".")[1]
+			cols, ex := repo_types.ComputeColumns(typ)
+			if ex != nil {
+				return &repo_types.DataActionError{
+					Err:  err,
+					Code: repo_types.Unknown,
+				}
+			}
+			ret.RefColumns = make([]string, 0)
+			//select the primary key column in cols
+			for _, col := range cols {
+				if col.IndexName == indexName {
+					ret.RefColumns = append(ret.RefColumns, col.Name)
+				}
+			}
+
 		}
+
 		return ret
 	}
 	panic(errStr)
