@@ -357,7 +357,7 @@ func CreateDatabaseInMySQL(dsn string, dbName string) error {
 	}()
 
 	// create database
-	err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName)).Error
+	err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbName)).Error
 	if err != nil {
 		return err
 	}

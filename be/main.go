@@ -5,10 +5,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"vngom/config"
+	"vngom/repo"
 
 	"vngom/fiber_wrapper"
 	"vngom/routers"
@@ -21,6 +21,7 @@ type AppInfo struct {
 	CurrentDir      string
 	CurrentYamlFile string
 }
+type GetTenantFunc func(ctx *fiber.App) string
 
 func main() {
 
@@ -65,6 +66,19 @@ func main() {
 			return routers.Routes
 
 		}),
+		di.Provide(func(cfg config.IConfig) repo.IRepoFactory {
+			repoFactory := repo.NewRepoFactory()
+			dbCfg := cfg.GetDBConfig()
+			repoFactory.ConfigDb(
+				string(dbCfg.Type),
+				dbCfg.Host,
+				dbCfg.Port,
+				dbCfg.User,
+				dbCfg.Password,
+			)
+
+			return repoFactory
+		}),
 	)
 
 	if err != nil {
@@ -75,7 +89,9 @@ func main() {
 		app *fiber.App,
 		tx context.Context,
 		cfg config.IConfig,
-		routers map[string]fiber_wrapper.Router) {
+		routers map[string]fiber_wrapper.Router,
+		repoFactory repo.IRepoFactory,
+	) {
 
 		//decalre routes hash dict string and function
 
@@ -83,23 +99,8 @@ func main() {
 		//add routes to app
 		startEnpont := "/api/:tenant"
 
-		for route, val := range routers {
-			method := strings.ToLower(val.Method)
+		fiber_wrapper.InstallRouters(routers, app, startEnpont, cfg, repoFactory)
 
-			if method == "get" {
-				app.Get(startEnpont+route, func(c *fiber.Ctx) error {
-					tenant := c.Params("tenant")
-					a := fiber_wrapper.NewAppContext(c, tenant, nil)
-					return val.Handler(a)
-				})
-			}
-
-		}
-
-		app.Get("/", func(c *fiber.Ctx) error {
-
-			return c.SendString("Hello, Fiber!")
-		})
 		app.Listen(cfg.GetServerConfig().Host + ":" + cfg.GetServerConfig().Port)
 
 	}); err != nil {

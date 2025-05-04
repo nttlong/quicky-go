@@ -8,6 +8,7 @@ import (
 	"vngom/models/bases"
 	"vngom/models/department"
 	"vngom/models/employee"
+	"vngom/models/tenants"
 	"vngom/repo"
 
 	"github.com/google/uuid"
@@ -63,7 +64,7 @@ func TestGetRepoFromRepoFactory(t *testing.T) {
 		"123456",
 	)
 	repoFactory.PingDb()
-	repo, e := repoFactory.Get("test")
+	repo, e := repoFactory.Get("tenants")
 	if e != nil {
 		t.Error(e)
 	}
@@ -84,7 +85,7 @@ func TestAutomigrateEntry(t *testing.T) {
 		t.Error(err)
 	}
 
-	e := repoDb.AutoMigrate(&department.Department{})
+	e := repoDb.AutoMigrate(&tenants.Tenants{})
 	if e != nil {
 		t.Error(e)
 	}

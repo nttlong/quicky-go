@@ -78,9 +78,9 @@ func (r *RepoMysql) AutoMigrate(data interface{}) error {
 		KN := field.Type.Kind().String()
 		fmt.Println(KN)
 		//check if the field is a array
-		if field.Type.Kind() == reflect.Array {
-			r.Db.AutoMigrate(reflect.New(field.Type.Elem()).Interface())
-		}
+		// if field.Type.Kind() == reflect.Array {
+		// 	r.Db.AutoMigrate(reflect.New(field.Type.Elem()).Interface())
+		// }
 
 		// Handle pointer with gorm tag
 		if field.Type.Kind() == reflect.Ptr {
