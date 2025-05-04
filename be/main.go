@@ -8,9 +8,10 @@ import (
 	"strings"
 	"syscall"
 
-	"quicky-go/pkg/config"
+	"vngom/config"
 
-	"quicky-go/routers"
+	"vngom/fiber_wrapper"
+	"vngom/routers"
 
 	"github.com/defval/di"
 	"github.com/gofiber/fiber/v2"
@@ -55,10 +56,12 @@ func main() {
 		di.Provide(func() *fiber.App {
 			return fiber.New()
 		}),
-		di.Provide(func(appInfo AppInfo) config.Config {
-			return config.LoadConfig(appInfo.CurrentYamlFile)
+		di.Provide(func(appInfo AppInfo) config.IConfig {
+			c := config.NewConfig()
+			c.LoadConfig(appInfo.CurrentYamlFile)
+			return c
 		}), // provide config
-		di.Provide(func() routers.RouterMapper {
+		di.Provide(func() map[string]fiber_wrapper.Router {
 			return routers.Routes
 
 		}),
@@ -68,41 +71,36 @@ func main() {
 		log.Fatal(err)
 	}
 	// invoke function
-	if err := Container.Invoke(func(app *fiber.App, tx context.Context, cfg config.Config, routers routers.RouterMapper) {
+	if err := Container.Invoke(func(
+		app *fiber.App,
+		tx context.Context,
+		cfg config.IConfig,
+		routers map[string]fiber_wrapper.Router) {
 
 		//decalre routes hash dict string and function
 
 		//scan routes and add to hash map
 		//add routes to app
 		startEnpont := "/api/:tenant"
+
 		for route, val := range routers {
 			method := strings.ToLower(val.Method)
 
 			if method == "get" {
-				app.Get(startEnpont+route, val.Handler)
-			} else if method == "post" {
-				app.Post(startEnpont+route, val.Handler)
-			} else if val.Method == "put" {
-				app.Put(startEnpont+route, val.Handler)
-			} else if method == "delete" {
-				app.Delete(startEnpont+route, val.Handler)
-			} else if method == "patch" {
-				app.Patch(startEnpont+route, val.Handler)
-			} else if method == "options" {
-				app.Options(startEnpont+route, val.Handler)
-			} else if method == "head" {
-				app.Head(startEnpont+route, val.Handler)
-			} else if method == "all" {
-				app.All(startEnpont+route, val.Handler)
+				app.Get(startEnpont+route, func(c *fiber.Ctx) error {
+					tenant := c.Params("tenant")
+					a := fiber_wrapper.NewAppContext(c, tenant, nil)
+					return val.Handler(a)
+				})
 			}
 
 		}
 
-		app.Post("/", func(c *fiber.Ctx) error {
+		app.Get("/", func(c *fiber.Ctx) error {
 
 			return c.SendString("Hello, Fiber!")
 		})
-		app.Listen(cfg.Server.Host + ":" + cfg.Server.Port)
+		app.Listen(cfg.GetServerConfig().Host + ":" + cfg.GetServerConfig().Port)
 
 	}); err != nil {
 		log.Fatal(err)

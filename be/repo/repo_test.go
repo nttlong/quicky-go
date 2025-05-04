@@ -101,7 +101,10 @@ func TestInsertData(t *testing.T) {
 		"root",
 		"123456",
 	)
-	repoFactory.PingDb()
+	err := repoFactory.PingDb()
+	if err != nil {
+		t.Error(err)
+	}
 	repoDb, err := repoFactory.Get("TestInsertData")
 	if err != nil {
 		t.Error(err)

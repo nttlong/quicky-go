@@ -28,7 +28,7 @@ type IRepoFactory interface {
 	SetAppDbDriverName(driverName string)
 	ConfigDb(driverName string, host string, port int, username string, password string)
 	GetConectionStringNoDatabase() string
-	PingDb()
+	PingDb() error
 	GetFullEntityName(entity interface{}) string
 	GetColumOfEntity(entity interface{}) ([]repo_types.Column, error)
 	CreateDatabaseIfNotExists(dbName string) error
@@ -124,18 +124,21 @@ func (rf *RepoFactory) ConfigDb(driverName string, host string, port int, userna
 
 }
 
-func (rf *RepoFactory) PingDb() {
+func (rf *RepoFactory) PingDb() error {
 	switch rf.appDbDriverName {
 	case "mysql":
 		cnn := rf.GetConectionStringNoDatabase()
 		_, err := gorm.Open(mysql.Open(cnn), &gorm.Config{})
 		if err != nil {
-			panic(err)
+			return err
+		} else {
+			return nil
 		}
 
 		// TODO: implement
 	case "postgres":
-		panic("not implemented for postgres")
+		return fmt.Errorf("not implemented for postgres")
+
 	// TODO: implement
 	default:
 		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))

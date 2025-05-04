@@ -32,19 +32,35 @@ type Config struct {
 	Server ServerConfig `yaml:"server"`
 	// Add other configurations here if needed.
 }
+type IConfig interface {
+	GetDBConfig() DBConfig
+	GetServerConfig() ServerConfig
+	LoadConfig(filePath string) error
+}
 
-// load the configuration from the YAML file.
-func LoadConfig(filePath string) Config {
+func (c *Config) GetDBConfig() DBConfig {
+	return c.DB
+}
+
+func (c *Config) GetServerConfig() ServerConfig {
+	return c.Server
+}
+
+func (c *Config) LoadConfig(filePath string) error {
 	// read the file content
-	ret := Config{}
+
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	// unmarshal the content into the Config struct
-	err = yaml.Unmarshal(content, &ret)
+	err = yaml.Unmarshal(content, &c)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	return ret
+	return nil
+}
+
+func NewConfig() IConfig {
+	return &Config{}
 }
