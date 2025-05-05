@@ -9,16 +9,14 @@ import (
 // models/user/user.go
 type Account struct {
 	bases.BaseModel
-	Username string `gorm:"type:varchar(191);uniqueIndex:idx_username;column:Username"`
-	Email    string `gorm:"type:varchar(191);uniqueIndex:idx_email;column:Email"`
-	Password string `gorm:"type:varchar(191);column:Password"`
-	Salt     string `json:"-" gorm:"not null;column:Salt"` // Lưu salt, không hiển thị trong JSON
+	Username string `gorm:"type:varchar(191);uniqueIndex:idx_username;"`
+	Email    string `gorm:"type:varchar(191);uniqueIndex:idx_email;"`
+	Password string `gorm:"type:varchar(191);"`
+	Salt     string `json:"-" gorm:"not null;"` // Lưu salt, không hiển thị trong JSON
 }
 
 // TableName sets the desired table name
-func (Account) TableName() string {
-	return "Account"
-}
+
 func HashPasswordWithSalt(password, salt string) (string, error) {
 	// **LƯU Ý QUAN TRỌNG:** Trong ứng dụng thực tế, bạn NÊN sử dụng bcrypt thay vì cách này.
 	// bcrypt tự động tạo salt an toàn và tích hợp nó vào hash.

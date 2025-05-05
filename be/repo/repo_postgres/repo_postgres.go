@@ -37,8 +37,8 @@ func doAlterColumInToCiTextStruct(db *gorm.DB, tableName string, typ reflect.Typ
 
 		}
 
-		columnName := typ.Field(i).Name
-		sql := fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" TYPE citext", tableName, columnName)
+		columnName := repo_types.ToSnakeCase(typ.Field(i).Name)
+		sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE citext", tableName, columnName)
 		fmt.Println(sql)
 		fr := db.Exec(sql)
 		if fr.Error != nil {
@@ -157,8 +157,8 @@ func (r *RepoPostgres) AutoMigrate(data interface{}) error {
 
 		if typ.Field(i).Type.Kind() == reflect.String {
 
-			columnName := typ.Field(i).Name
-			sql := fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" TYPE citext", tableName, columnName)
+			columnName := repo_types.ToSnakeCase(typ.Field(i).Name)
+			sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE citext", tableName, columnName)
 			fmt.Println(sql)
 			fr := r.Db.Exec(sql)
 			if fr.Error != nil {
@@ -181,7 +181,7 @@ func (r *RepoPostgres) AutoMigrate(data interface{}) error {
 
 				// create CONSTRAINT email_max_length CHECK (length(email) <= 320)
 				if strLen != nil {
-					sql := fmt.Sprintf("ALTER TABLE \"%s\" ADD CONSTRAINT \"%s_max_length\" CHECK (length(\"%s\") <= %s)", tableName, columnName, columnName, *strLen)
+					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s_max_length CHECK (length(%s) <= %s)", tableName, columnName, columnName, *strLen)
 					// fmt.Print(sql)
 					fr := r.Db.Exec(sql)
 					if fr.Error != nil {
@@ -231,7 +231,14 @@ func (r *RepoPostgres) Update(data interface{}, cond string, args ...interface{}
 	panic("not implemented")
 }
 func (r *RepoPostgres) Get(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError {
-	panic("not implemented")
+	r.AutoMigrate(data)
+	result := r.Db.Model(&data).Where(cond, args).First(data)
+
+	if result.Error != nil {
+		return r.GetError(result.Error, reflect.TypeOf(data), repo_types.GetTableNameOfEntity(data), "get")
+	}
+
+	return nil
 }
 func (r *RepoPostgres) Select(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError {
 	panic("not implemented")

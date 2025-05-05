@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 /*
@@ -272,7 +273,7 @@ func GetTableNameOfEntity(entity interface{}) string {
 	if strings.Contains(tableName, ".") {
 		tableName = strings.Split(tableName, ".")[1]
 	}
-	return tableName
+	return ToSnakeCase(tableName) + "s"
 }
 func GetReflectType(entity interface{}) (reflect.Type, error) {
 	typ := reflect.TypeOf(entity)
@@ -283,4 +284,19 @@ func GetReflectType(entity interface{}) (reflect.Type, error) {
 
 	}
 	return nil, errors.New("entity must be a pointer to struct")
+}
+func ToSnakeCase(input string) string {
+	var result []rune
+	for i, r := range input {
+		if unicode.IsUpper(r) {
+			// Thêm dấu _ trước ký tự viết hoa (trừ ký tự đầu)
+			if i > 0 {
+				result = append(result, '_')
+			}
+			result = append(result, unicode.ToLower(r))
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
 }

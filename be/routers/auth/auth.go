@@ -29,7 +29,7 @@ func Login(c fiber_wrapper.IAppContext) error {
 	fmt.Println("Login time: ", elapseTime.Milliseconds())
 	desc := fmt.Sprint("create tenant: %s", c.GetTenant())
 	starAt = time.Now().UTC()
-	_ = tenantRepo.Insert(&tenants.Tenants{
+	_ = tenantRepo.Insert(&tenants.TenantInfo{
 		ID:          uuid.New(),
 		Name:        c.GetTenant(),
 		Description: desc,

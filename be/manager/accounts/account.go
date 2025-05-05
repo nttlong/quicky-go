@@ -91,6 +91,11 @@ func (m *AccountManager) CreateAccount(name string, email string, password strin
 	fmt.Println("CreateAccount time in ms: ", elapseTime.Milliseconds())
 	if err != nil {
 		if err.Code == repo_types.Duplicate {
+			err = m.Get(&acc, `username =?`, acc.Username)
+
+			if err != nil {
+				return nil, err
+			}
 			return &acc, nil
 
 		} else {
