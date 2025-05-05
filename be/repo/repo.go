@@ -6,63 +6,47 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"vngom/repo/repo_mysql"
+	"vngom/repo/repo_postgres"
 	"vngom/repo/repo_types"
+	"vngom/repo/utils"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 type IRepo interface {
 	Insert(data interface{}) *repo_types.DataActionError
-	Update(data interface{}) *repo_types.DataActionError
+	Update(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError
+	Get(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError
+	Select(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError
 	Delete(data interface{}) *repo_types.DataActionError
 	AutoMigrate(data interface{}) error
 	GetError(err error, typ reflect.Type, tableName string, action string) *repo_types.DataActionError
+	GetDbName() string
 }
 
 type IRepoFactory interface {
-	// Get returns a repo for the given database name. it also creates the database if it does not exist.
+	utils.IUtils
 	Get(dbName string) (IRepo, error)
-	/// SetAppDbDriverName sets the driver name for the app database.
-	SetAppDbDriverName(driverName string)
-	ConfigDb(driverName string, host string, port int, username string, password string)
-	GetConectionStringNoDatabase() string
-	PingDb() error
+
 	GetFullEntityName(entity interface{}) string
-	GetColumOfEntity(entity interface{}) ([]repo_types.Column, error)
-	CreateDatabaseIfNotExists(dbName string) error
+	GetColumOfEntity(enty interface{}) ([]repo_types.Column, error)
 }
 
 // ==============================
 
 type RepoFactory struct {
-	appDbDriverName string
-	appDbHost       string
-	appDbPort       int
-	appDbUsername   string
-	appDbPassword   string
+	utils.IUtils
 }
 
 // caceh for repo
 var repoCache = make(map[string]IRepo)
 var repoCacheMutex = &sync.RWMutex{}
 
-func (rf *RepoFactory) CreateDatabaseIfNotExists(dbName string) error {
-
-	switch rf.appDbDriverName {
-	case "mysql":
-		dns := rf.GetConectionStringNoDatabase()
-		err := CreateDatabaseInMySQL(dns, dbName)
-		return err
-
-	case "postgres":
-		panic("not implemented for postgres")
-	default:
-		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
-	}
-}
 func (rf *RepoFactory) Get(dbName string) (IRepo, error) {
 
 	// check if the repo is already created
@@ -81,11 +65,14 @@ func (rf *RepoFactory) Get(dbName string) (IRepo, error) {
 		return nil, err
 	}
 	// create a new repo
-	repo, err := NewRepo(dbName,
-		rf.appDbDriverName,
-		rf.appDbHost,
-		rf.appDbPort,
-		rf.appDbUsername, rf.appDbPassword)
+	repo, err := NewRepo(
+		dbName,
+		rf.IUtils.GetDbType(),
+		rf.IUtils.GetHost(),
+		rf.IUtils.GetPort(),
+		rf.IUtils.GetUser(),
+		rf.IUtils.GetPassword(),
+	)
 	if err != nil {
 		repoCacheMutex.Unlock()
 		return nil, err
@@ -95,56 +82,6 @@ func (rf *RepoFactory) Get(dbName string) (IRepo, error) {
 	// unlock the cache
 	repoCacheMutex.Unlock()
 	return repo, nil
-}
-
-func (rf *RepoFactory) SetAppDbDriverName(driverName string) {
-	rf.appDbDriverName = driverName
-
-}
-func (rf *RepoFactory) GetConectionStringNoDatabase() string {
-	// check all required fields are set
-	if rf.appDbDriverName == "" || rf.appDbHost == "" || rf.appDbPort == 0 || rf.appDbUsername == "" || rf.appDbPassword == "" {
-		panic("app db configuration is not set")
-	}
-	switch rf.appDbDriverName {
-	case "mysql":
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/", rf.appDbUsername, rf.appDbPassword, rf.appDbHost, rf.appDbPort)
-	case "postgres":
-		return fmt.Sprintf("postgres://%s:%s@%s:%d/", rf.appDbUsername, rf.appDbPassword, rf.appDbHost, rf.appDbPort)
-	// TODO: implement
-	default:
-		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
-	}
-}
-func (rf *RepoFactory) ConfigDb(driverName string, host string, port int, username string, password string) {
-	rf.appDbDriverName = driverName
-	rf.appDbHost = host
-	rf.appDbPort = port
-	rf.appDbUsername = username
-	rf.appDbPassword = password
-
-}
-
-func (rf *RepoFactory) PingDb() error {
-	switch rf.appDbDriverName {
-	case "mysql":
-		cnn := rf.GetConectionStringNoDatabase()
-		_, err := gorm.Open(mysql.Open(cnn), &gorm.Config{})
-		if err != nil {
-			return err
-		} else {
-			return nil
-		}
-
-		// TODO: implement
-	case "postgres":
-		return fmt.Errorf("not implemented for postgres")
-
-	// TODO: implement
-	default:
-		panic(fmt.Sprintf("unsupported driver: %s", rf.appDbDriverName))
-	}
-
 }
 
 var CacheColumnInfo = make(map[string][]repo_types.Column)
@@ -197,8 +134,19 @@ func (rf *RepoFactory) GetColumOfEntity(enty interface{}) ([]repo_types.Column, 
 	return columns, nil
 }
 
-func NewRepoFactory() IRepoFactory {
-	return &RepoFactory{}
+var (
+	RepoFactoryInstance IRepoFactory
+	once                sync.Once
+)
+
+func NewRepoFactory(dbType string) IRepoFactory {
+	once.Do(func() {
+		RepoFactoryInstance = &RepoFactory{
+			IUtils: utils.NewUtils(dbType),
+		}
+	})
+
+	return RepoFactoryInstance
 }
 func NewRepo(
 	dbName string,
@@ -208,6 +156,8 @@ func NewRepo(
 	username string,
 	password string,
 ) (IRepo, error) {
+	fmt.Print("NewRepo: " + dbName)
+
 	switch driverName {
 	case "mysql":
 		dsn := fmt.Sprintf(
@@ -219,14 +169,40 @@ func NewRepo(
 			port,
 			dbName)
 		db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+
 		if err != nil {
 			return nil, err
 		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			return nil, err
+		}
+
+		// Set reasonable pool sizes (tune nếu cần)
+		sqlDB.SetMaxOpenConns(200)          // Max concurrent conns
+		sqlDB.SetMaxIdleConns(50)           // Idle connections giữ lại
+		sqlDB.SetConnMaxLifetime(time.Hour) // Refresh sau 1 giờ
 		return &repo_mysql.RepoMysql{
-			Db: db,
+			Db:     db,
+			DbName: dbName,
 		}, nil
 	case "postgres":
-		panic("not implemented for postgres")
+		dns := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+			host,
+			port,
+			username,
+			password,
+			dbName)
+		db, err := gorm.Open(postgres.Open(dns), &gorm.Config{})
+		if err != nil {
+			return nil, err
+		}
+
+		return &repo_postgres.RepoPostgres{
+			Db:     db,
+			DbName: dbName,
+		}, nil
+
 	default:
 		panic(fmt.Sprintf("unsupported driver: %s", driverName))
 	}
@@ -332,40 +308,4 @@ func ExtractLength(sqlType string) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-var lockCreateDatabase = &sync.RWMutex{}
-var CacheCreateDatabase = make(map[string]bool)
-
-func CreateDatabaseInMySQL(dsn string, dbName string) error {
-	lockCreateDatabase.RLock()
-	if _, exists := CacheCreateDatabase[dbName]; exists {
-		lockCreateDatabase.RUnlock()
-		return nil
-	}
-	lockCreateDatabase.RUnlock() // Move RUnlock here
-
-	dsn += "mysql"
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return err
-	}
-	defer func() {
-		sqlDB, _ := db.DB() // Get the underlying sql.DB
-		if sqlDB != nil {
-			sqlDB.Close() // Close the database connection
-		}
-	}()
-
-	// create database
-	err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbName)).Error
-	if err != nil {
-		return err
-	}
-	fmt.Println("Database created successfully")
-	// add to cache
-	lockCreateDatabase.Lock()
-	CacheCreateDatabase[dbName] = true
-	lockCreateDatabase.Unlock()
-	return nil
 }

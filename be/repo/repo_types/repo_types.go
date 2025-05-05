@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 /*
@@ -138,7 +139,33 @@ func GoTypeToSQLType(typ reflect.Type) string {
 	}
 	return "text" // Mặc định
 }
+
+var (
+	ComputeColumnsCache = make(map[reflect.Type][]Column)
+	ComputeColumnsLock  = new(sync.RWMutex)
+)
+
 func ComputeColumns(typ reflect.Type) ([]Column, error) {
+	//check if columns already computed
+	ComputeColumnsLock.RLock()
+	columns, ok := ComputeColumnsCache[typ]
+	ComputeColumnsLock.RUnlock()
+	if ok {
+		return columns, nil
+	}
+
+	columns, err := extractColumnsFromTypeOfModel(typ)
+	if err != nil {
+		return nil, err
+	}
+	ComputeColumnsLock.Lock()
+	fmt.Println("compute columns for ", typ.Name())
+	ComputeColumnsCache[typ] = columns
+	ComputeColumnsLock.Unlock()
+	return columns, nil
+}
+func extractColumnsFromTypeOfModel(typ reflect.Type) ([]Column, error) {
+	//check if columns already computed
 
 	var columns []Column
 	for i := 0; i < typ.NumField(); i++ {
@@ -215,6 +242,7 @@ func ComputeColumns(typ reflect.Type) ([]Column, error) {
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("no valid columns found in %v", typ.Name())
 	}
+	//cache columns
 
 	return columns, nil
 }

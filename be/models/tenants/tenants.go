@@ -8,7 +8,7 @@ import (
 
 type Tenants struct {
 	ID          uuid.UUID  `gorm:"type:char(36);primaryKey;column:ID"`
-	Name        string     `gorm:"uniqueIndex:idx_name,length:191;column:Name"`                // Tên của tenant
+	Name        string     `gorm:"type:char(191);uniqueIndex:idx_name;column:Name"`            // Tên của tenant
 	Description string     `gorm:"type:text;column:Description"`                               // Mô tả của tenant
 	Status      int        `gorm:"default:1;column:Status"`                                    // Trạng thái của tenant: 1: Active, 0: Inactive
 	DeletedAt   *time.Time `gorm:"index;column:DeletedAt"`                                     // Thời gian xóa mềm (soft delete)

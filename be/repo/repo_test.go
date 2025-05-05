@@ -17,9 +17,8 @@ import (
 )
 
 func TestRepoFactory(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+	repoFactory := repo.NewRepoFactory("mysql")
 	repoFactory.ConfigDb(
-		"mysql",
 		"localhost",
 		3306,
 		"root",
@@ -28,8 +27,78 @@ func TestRepoFactory(t *testing.T) {
 	repoFactory.PingDb()
 
 }
+func TestRepoFactoryPostgres(t *testing.T) {
+	repoFactory := repo.NewRepoFactory("postgres")
+	repoFactory.ConfigDb(
+		"localhost",
+		5432,
+		"postgres",
+		"123456",
+	)
+	err := repoFactory.PingDb()
+	t.Log(err)
+
+}
+func TestRepoFactoryPostgresCreateDb(t *testing.T) {
+	repoFactory := repo.NewRepoFactory("postgres")
+	repoFactory.ConfigDb(
+		"localhost",
+		5432,
+		"postgres",
+		"123456",
+	)
+	err := repoFactory.PingDb()
+	t.Log(err)
+
+	repoDb, err := repoFactory.Get("tenantsqqq")
+	if err != nil {
+		t.Error(err)
+	}
+	e := repoDb.AutoMigrate(&tenants.Tenants{})
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(e)
+}
+func TestGetRepoFromRepoFactoryPostgres(t *testing.T) {
+	repoFactory := repo.NewRepoFactory("postgres")
+	repoFactory.ConfigDb(
+		"localhost",
+		5432,
+		"postgres",
+		"123456",
+	)
+	repoFactory.PingDb()
+	repo, e := repoFactory.Get("tenants")
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(repo)
+}
+func TestAutomigrateEntryPostgres(t *testing.T) {
+	repoFactory := repo.NewRepoFactory("postgres")
+	repoFactory.ConfigDb(
+
+		"localhost",
+		5432,
+		"postgres",
+		"123456",
+	)
+	repoFactory.PingDb()
+	repo, e := repoFactory.Get("tenants")
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(repo)
+
+	e = repo.AutoMigrate(&tenants.Tenants{})
+	if e != nil {
+		t.Error(e)
+	}
+	t.Log(e)
+}
 func TestGetFullEntityNameOfRepoFactory(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+	repoFactory := repo.NewRepoFactory("mysql")
 
 	f := repoFactory.GetFullEntityName(&account.Account{})
 	fmt.Println(f)
@@ -65,9 +134,8 @@ func TestGetColumOfRepoFactory(t *testing.T) {
 	t.Log(f)
 }
 func TestGetRepoFromRepoFactory(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+	repoFactory := repo.NewRepoFactory("mysql")
 	repoFactory.ConfigDb(
-		"mysql",
 		"localhost",
 		3306,
 		"root",
@@ -81,9 +149,9 @@ func TestGetRepoFromRepoFactory(t *testing.T) {
 	t.Log(repo)
 }
 func TestAutomigrateEntry(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+	repoFactory := repo.NewRepoFactory("mysql")
 	repoFactory.ConfigDb(
-		"mysql",
+
 		"localhost",
 		3306,
 		"root",
@@ -104,9 +172,8 @@ func TestAutomigrateEntry(t *testing.T) {
 
 // test insert data
 func TestInsertData(t *testing.T) {
-	repoFactory := repo.NewRepoFactory()
+	repoFactory := repo.NewRepoFactory("mysql")
 	repoFactory.ConfigDb(
-		"mysql",
 		"localhost",
 		3306,
 		"root",

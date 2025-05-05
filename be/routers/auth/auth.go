@@ -6,16 +6,26 @@ import (
 	"vngom/fiber_wrapper"
 	"vngom/models/tenants"
 
+	"vngom/manager/accounts"
+
+	_ "vngom/repo/repo_types"
+
 	"github.com/google/uuid"
 )
 
 func Login(c fiber_wrapper.IAppContext) error {
+	//check time
+	starAt := time.Now().UTC()
 	tenantRepo, err := c.GetRepoFactory().Get("tenants")
+
 	if err != nil {
 		return err
 	}
+	elapseTime := time.Now().UTC().Sub(starAt)
+	fmt.Println("Login time: ", elapseTime.Milliseconds())
 	desc := fmt.Sprint("create tenant: %s", c.GetTenant())
-	dbErr := tenantRepo.Insert(&tenants.Tenants{
+	starAt = time.Now().UTC()
+	_ = tenantRepo.Insert(&tenants.Tenants{
 		ID:          uuid.New(),
 		Name:        c.GetTenant(),
 		Description: desc,
@@ -26,11 +36,32 @@ func Login(c fiber_wrapper.IAppContext) error {
 		CreatedOn:   time.Now().UTC(),
 		ModifiedOn:  time.Now().UTC(),
 	})
-	if dbErr != nil {
-		return c.GetApp().SendString(dbErr.Error())
+	elapseTime = time.Now().UTC().Sub(starAt)
+	fmt.Println("Login time in ms: ", elapseTime.Milliseconds())
+	// if dbErr != nil {
+	// 	return c.GetApp().SendString(dbErr.Error())
+	// }
+
+	mgg := accounts.NewAccountManager(c.GetRepo())
+	elapseTime = time.Now().UTC().Sub(starAt)
+
+	acc, errv := mgg.CreateAccount("admin", "admin@localhost", "123456")
+	elapseTime = time.Now().UTC().Sub(starAt)
+	fmt.Println("CreateAccount time in ms: ", elapseTime.Milliseconds())
+
+	//nacc, errv := mgg.ValidateAccount("admin", "123456")
+	if errv != nil {
+		return c.GetApp().SendString(errv.Error())
+	} else {
+		//return json.Marshal(nacc)
+		return c.GetApp().JSON(acc)
 	}
 
-	return c.GetApp().SendString(c.GetTenant())
+	// if errDb != nil {
+	// 	return c.GetApp().SendString(errDb.Error())
+	// }
+	// return c.GetApp().SendString(c.GetTenant())
+
 	// tenant := c.Params("tenant") // Lấy giá trị của tham số tenant
 	// return c.SendString(fmt.Sprintf("Login for tenant: %s", tenant))
 

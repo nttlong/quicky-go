@@ -5,15 +5,20 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 	"vngom/repo/repo_types"
 
 	"gorm.io/gorm"
 )
 
 type RepoMysql struct {
-	Db *gorm.DB
+	Db     *gorm.DB
+	DbName string
 }
 
+func (r *RepoMysql) GetDbName() string {
+	return r.DbName
+}
 func (r *RepoMysql) GetError(err error, typ reflect.Type, tableName string, action string) *repo_types.DataActionError {
 	//"Duplicate entry '00000000-0000-0000-0000-000000000000' for key 'tenants.PRIMARY'"
 	errStr := err.Error()
@@ -65,13 +70,19 @@ func (r *RepoMysql) GetError(err error, typ reflect.Type, tableName string, acti
 
 		return ret
 	}
-	panic(errStr)
+	return &repo_types.DataActionError{
+		Err:  err,
+		Code: repo_types.Unknown,
+	}
 }
 func (r *RepoMysql) Insert(data interface{}) *repo_types.DataActionError {
+
 	err := r.AutoMigrate(data)
+
 	if err != nil {
 		return &repo_types.DataActionError{Err: err}
 	}
+
 	err = r.Db.Create(data).Error
 
 	if err != nil {
@@ -80,28 +91,42 @@ func (r *RepoMysql) Insert(data interface{}) *repo_types.DataActionError {
 		if errT != nil {
 			return &repo_types.DataActionError{Err: err}
 		}
+		startAt := time.Now()
 
-		// if typ.Kind() == reflect.Ptr {
-		// 	typ = typ.Elem()
-		// 	tableName = typ.String()
-		// }
-		// if typ.Kind() != reflect.Struct {
-		// 	return &repo_types.DataActionError{Err: err}
-		// }
-		return r.GetError(err, typ, tableName, "insert")
+		rr := r.GetError(err, typ, tableName, "insert")
+		elapseTime := time.Since(startAt)
+		fmt.Println("GetError: ", elapseTime.Milliseconds())
+		return rr
 	}
 	return nil
 
 }
-func (r *RepoMysql) Update(data interface{}) *repo_types.DataActionError {
+func (r *RepoMysql) Update(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError {
+	result := r.Db.Model(&data).Where(cond, args).Updates(data)
+	if result.Error != nil {
+		return r.GetError(result.Error, reflect.TypeOf(data), repo_types.GetTableNameOfEntity(data), "update")
+	}
+
+	return nil
+}
+func (r *RepoMysql) Select(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError {
 	panic("implement")
 }
+func (r *RepoMysql) Get(data interface{}, cond string, args ...interface{}) *repo_types.DataActionError {
+	result := r.Db.Model(&data).Where(cond, args).First(data)
+	if result.Error != nil {
+		return r.GetError(result.Error, reflect.TypeOf(data), repo_types.GetTableNameOfEntity(data), "get")
+	}
+
+	return nil
+}
+
 func (r *RepoMysql) Delete(data interface{}) *repo_types.DataActionError {
 	panic("implement")
 }
 
 var (
-	autoMigrateCache     = make(map[reflect.Type]bool)
+	autoMigrateCache     = make(map[string]bool)
 	autoMigrateCacheLock = new(sync.RWMutex)
 	autoMigrateWaitGroup sync.WaitGroup
 )
@@ -110,10 +135,11 @@ var (
 // It checks cache to avoid redundant migrations and handles nested pointers with gorm tags.
 func (r *RepoMysql) AutoMigrate(data interface{}) error {
 	typ := reflect.TypeOf(data)
+	cachekey := r.GetDbName() + "/" + typ.String()
 
 	// Check cache with read lock to avoid redundant migration
 	autoMigrateCacheLock.RLock()
-	if autoMigrateCache[typ] {
+	if autoMigrateCache[cachekey] {
 		autoMigrateCacheLock.RUnlock()
 		return nil
 	}
@@ -132,21 +158,15 @@ func (r *RepoMysql) AutoMigrate(data interface{}) error {
 	// Iterate over fields to handle nested structures and pointers
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		fname := field.Name
-		fmt.Println(fname)
-		fk := field.Type.Kind().String()
-		fmt.Println(fk)
+		// fname := field.Name
+		// fmt.Println(fname)
+		// fk := field.Type.Kind().String()
+		// fmt.Println(fk)
 
 		// Handle slice of interface (e.g., []interface{})
 		if field.Type.Kind() == reflect.Slice {
 			r.Db.AutoMigrate(reflect.New(field.Type.Elem()).Interface())
 		}
-		KN := field.Type.Kind().String()
-		fmt.Println(KN)
-		//check if the field is a array
-		// if field.Type.Kind() == reflect.Array {
-		// 	r.Db.AutoMigrate(reflect.New(field.Type.Elem()).Interface())
-		// }
 
 		// Handle pointer with gorm tag
 		if field.Type.Kind() == reflect.Ptr {
@@ -170,7 +190,7 @@ func (r *RepoMysql) AutoMigrate(data interface{}) error {
 	defer autoMigrateCacheLock.Unlock()
 
 	// Double-check cache to handle concurrent calls
-	if autoMigrateCache[typ] {
+	if autoMigrateCache[cachekey] {
 		return nil
 	}
 
@@ -181,8 +201,8 @@ func (r *RepoMysql) AutoMigrate(data interface{}) error {
 	}
 
 	// Mark this type as migrated
-	autoMigrateCache[typ] = true
-	fmt.Println("Migrated:", typ.Name())
+	autoMigrateCache[cachekey] = true
+	fmt.Println("Migrated:", cachekey)
 
 	return nil
 }

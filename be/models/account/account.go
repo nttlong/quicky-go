@@ -9,9 +9,9 @@ import (
 // models/user/user.go
 type Account struct {
 	bases.BaseModel
-	Username string `gorm:"type:varchar(191);uniqueIndex:idx_username,length:191;column:Username"`
-	Email    string `gorm:"type:varchar(191);uniqueIndex:idx_email,length:191;column:Email"`
-	Password string `gorm:"column:Password"`
+	Username string `gorm:"type:varchar(191);uniqueIndex:idx_username;column:Username"`
+	Email    string `gorm:"type:varchar(191);uniqueIndex:idx_email;column:Email"`
+	Password string `gorm:"type:varchar(191);column:Password"`
 	Salt     string `json:"-" gorm:"not null;column:Salt"` // Lưu salt, không hiển thị trong JSON
 }
 

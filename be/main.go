@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"vngom/config"
 	"vngom/repo"
@@ -24,7 +26,7 @@ type AppInfo struct {
 type GetTenantFunc func(ctx *fiber.App) string
 
 func main() {
-
+	// runtime.GOMAXPROCS(6)
 	// get current directory
 
 	// load config
@@ -55,7 +57,15 @@ func main() {
 			}
 		}), // provide application info
 		di.Provide(func() *fiber.App {
-			return fiber.New()
+			return fiber.New(fiber.Config{
+				// Prefork:      true, // Sử dụng multi-core
+				// ServerHeader: "Fiber",
+				// ReadTimeout:  5 * time.Second,
+				// WriteTimeout: 10 * time.Second,
+				// IdleTimeout:  30 * time.Second,
+				// Concurrency:  100000, // Tăng số connection đồng thời
+
+			})
 		}),
 		di.Provide(func(appInfo AppInfo) config.IConfig {
 			c := config.NewConfig()
@@ -67,10 +77,11 @@ func main() {
 
 		}),
 		di.Provide(func(cfg config.IConfig) repo.IRepoFactory {
-			repoFactory := repo.NewRepoFactory()
+
 			dbCfg := cfg.GetDBConfig()
+			repoFactory := repo.NewRepoFactory(string(dbCfg.Type))
 			repoFactory.ConfigDb(
-				string(dbCfg.Type),
+
 				dbCfg.Host,
 				dbCfg.Port,
 				dbCfg.User,
@@ -99,7 +110,23 @@ func main() {
 		//add routes to app
 		startEnpont := "/api/:tenant"
 
+		app.Use(func(c *fiber.Ctx) error {
+			start := time.Now()
+
+			// Xử lý các middleware và handler tiếp theo
+			err := c.Next()
+
+			duration := time.Since(start)
+
+			// Thêm Server-Timing header
+			c.Append("Server-Timing", fmt.Sprintf("total;dur=%d", duration.Milliseconds()))
+
+			return err
+		})
 		fiber_wrapper.InstallRouters(routers, app, startEnpont, cfg, repoFactory)
+		app.Get("/health", func(c *fiber.Ctx) error {
+			return c.SendString("OK")
+		})
 
 		app.Listen(cfg.GetServerConfig().Host + ":" + cfg.GetServerConfig().Port)
 

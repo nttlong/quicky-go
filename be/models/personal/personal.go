@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"vngom/models/bases"
-
-	_ "github.com/jinzhu/gorm"
 )
 
 // PersonalInfo represents the personal information of a user.

@@ -7,7 +7,6 @@ import (
 	"vngom/models/personal"
 
 	"github.com/google/uuid"
-	_ "github.com/jinzhu/gorm"
 )
 
 type Employee struct {

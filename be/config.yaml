@@ -1,12 +1,12 @@
-db_:
-  dbType: postgres
-  dbName: my_database
-  dbUser: my_user
-  dbPassword: my_password
-  dbHost: localhost
-  dbPort: 5432
-  dbSchema: public
 db:
+  type: postgres
+  name: saas
+  user: postgres
+  password: 123456
+  host: localhost
+  port: 5432
+ # dbSchema: public
+db_:
   type: mysql
   name: saas
   user: root
