@@ -80,6 +80,17 @@ func (u *UtilsPostgres) CreateDatabaseIfNotExists(dbName string) error {
 		}
 
 	}
+	postgresSQLEnablecitextExtension := "CREATE EXTENSION IF NOT EXISTS citext;"
+	newDbCnn := u.GetConectionString(dbName)
+	newDb, err := gorm.Open(postgres.Open(newDbCnn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+	err = newDb.Exec(postgresSQLEnablecitextExtension).Error
+	if err != nil {
+		return err
+
+	}
 	fmt.Println("Database created successfully")
 	// add to cache
 	lockCreateDatabase.Lock()

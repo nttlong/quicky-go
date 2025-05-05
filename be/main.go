@@ -26,7 +26,7 @@ type AppInfo struct {
 type GetTenantFunc func(ctx *fiber.App) string
 
 func main() {
-	// runtime.GOMAXPROCS(6)
+	//runtime.GOMAXPROCS(4)
 	// get current directory
 
 	// load config

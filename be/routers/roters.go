@@ -12,5 +12,9 @@ func init() {
 		Method:  "GET",
 		Handler: auth.Login,
 	}
+	Routes["/auth/get-tenant"] = fiber_wrapper.Router{
+		Method:  "GET",
+		Handler: auth.GetTenant,
+	}
 
 }

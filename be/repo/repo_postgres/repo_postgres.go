@@ -3,6 +3,7 @@ package repo_postgres
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,53 @@ var autoMigrateCacheLock = new(sync.RWMutex)
 
 func (r *RepoPostgres) GetDbName() string {
 	return r.DbName
+}
+func doAlterColumInToCiTextStruct(db *gorm.DB, tableName string, typ reflect.Type) {
+	for i := 0; i < typ.NumField(); i++ {
+		ft := typ.Field(i).Type.Kind().String()
+		fmt.Print(ft)
+		if typ.Field(i).Type.Kind() == reflect.Struct {
+			doAlterColumInToCiTextStruct(db, tableName, typ.Field(i).Type)
+
+		}
+
+		if typ.Field(i).Type.Kind() == reflect.String {
+
+		}
+
+		columnName := typ.Field(i).Name
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" TYPE citext", tableName, columnName)
+		fmt.Println(sql)
+		fr := db.Exec(sql)
+		if fr.Error != nil {
+			fmt.Println(fr.Error)
+		}
+		strTag := typ.Field(i).Tag.Get("gorm")
+		//decalre regex detect len in tag looks like gorm:"type:varchar(255)" or nvachar(50)
+		re := regexp.MustCompile(`type:varchar\((\d+)\)`)
+		var strLen *string = nil
+		if re.MatchString(strTag) {
+			strLen = &re.FindStringSubmatch(strTag)[1]
+
+		}
+		re = regexp.MustCompile(`type:nvarchar\((\d+)\)`)
+		if re.MatchString(strTag) {
+			strLen = &re.FindStringSubmatch(strTag)[1]
+
+		}
+		if strLen != nil {
+
+			// create CONSTRAINT email_max_length CHECK (length(email) <= 320)
+			if strLen != nil {
+				sql := fmt.Sprintf("ALTER TABLE \"%s\" ADD CONSTRAINT \"%s_max_length\" CHECK (length(\"%s\") <= %s)", tableName, columnName, columnName, *strLen)
+				fr := db.Exec(sql)
+				if fr.Error != nil {
+					fmt.Println(fr.Error)
+				}
+
+			}
+		}
+	}
 }
 
 // AutoMigrate performs database migration for the given data structure.
@@ -76,6 +124,12 @@ func (r *RepoPostgres) AutoMigrate(data interface{}) error {
 				}
 			}
 		}
+		//colTag := field.Tag.Get("gorm")
+		//check type of field is string
+		if field.Type.Kind() == reflect.String {
+
+		}
+
 	}
 
 	// Acquire write lock to perform migration and update cache
@@ -89,6 +143,57 @@ func (r *RepoPostgres) AutoMigrate(data interface{}) error {
 
 	// Perform the actual auto-migration
 	err := r.Db.AutoMigrate(data)
+	// re modifi all string field to citext
+	// sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE varchar", tableName, columnName)
+	// r.Db.Exec(sql)
+	tableName := repo_types.GetTableNameOfEntity(data)
+	for i := 0; i < typ.NumField(); i++ {
+		ft := typ.Field(i).Type.Kind().String()
+		fmt.Print(ft)
+		if typ.Field(i).Type.Kind() == reflect.Struct {
+			doAlterColumInToCiTextStruct(r.Db, tableName, typ.Field(i).Type)
+
+		}
+
+		if typ.Field(i).Type.Kind() == reflect.String {
+
+			columnName := typ.Field(i).Name
+			sql := fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" TYPE citext", tableName, columnName)
+			fmt.Println(sql)
+			fr := r.Db.Exec(sql)
+			if fr.Error != nil {
+				fmt.Println(fr.Error)
+			}
+			strTag := typ.Field(i).Tag.Get("gorm")
+			//decalre regex detect len in tag looks like gorm:"type:varchar(255)" or nvachar(50)
+			re := regexp.MustCompile(`type:varchar\((\d+)\)`)
+			var strLen *string = nil
+			if re.MatchString(strTag) {
+				strLen = &re.FindStringSubmatch(strTag)[1]
+
+			}
+			re = regexp.MustCompile(`type:nvarchar\((\d+)\)`)
+			if re.MatchString(strTag) {
+				strLen = &re.FindStringSubmatch(strTag)[1]
+
+			}
+			if strLen != nil {
+
+				// create CONSTRAINT email_max_length CHECK (length(email) <= 320)
+				if strLen != nil {
+					sql := fmt.Sprintf("ALTER TABLE \"%s\" ADD CONSTRAINT \"%s_max_length\" CHECK (length(\"%s\") <= %s)", tableName, columnName, columnName, *strLen)
+					// fmt.Print(sql)
+					fr := r.Db.Exec(sql)
+					if fr.Error != nil {
+						fmt.Println(fr.Error)
+					}
+
+				}
+			}
+
+		}
+	}
+
 	if err != nil {
 		return err
 	}

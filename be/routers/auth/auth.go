@@ -17,6 +17,10 @@ func Login(c fiber_wrapper.IAppContext) error {
 	//check time
 	starAt := time.Now().UTC()
 	tenantRepo, err := c.GetRepoFactory().Get("tenants")
+	cdb, err := c.GetRepo()
+	if err != nil {
+		return err
+	}
 
 	if err != nil {
 		return err
@@ -42,7 +46,7 @@ func Login(c fiber_wrapper.IAppContext) error {
 	// 	return c.GetApp().SendString(dbErr.Error())
 	// }
 
-	mgg := accounts.NewAccountManager(c.GetRepo())
+	mgg := accounts.NewAccountManager(cdb)
 	elapseTime = time.Now().UTC().Sub(starAt)
 
 	acc, errv := mgg.CreateAccount("admin", "admin@localhost", "123456")
@@ -65,4 +69,7 @@ func Login(c fiber_wrapper.IAppContext) error {
 	// tenant := c.Params("tenant") // Lấy giá trị của tham số tenant
 	// return c.SendString(fmt.Sprintf("Login for tenant: %s", tenant))
 
+}
+func GetTenant(c fiber_wrapper.IAppContext) error {
+	return c.GetApp().SendString(c.GetTenant())
 }

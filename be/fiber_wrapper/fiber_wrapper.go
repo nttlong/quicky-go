@@ -20,16 +20,16 @@ type IAppContext interface {
 	GetApp() *fiber.Ctx
 	GetTenant() string
 	SetTenant(tenant string)
-	GetRepo() repo.IRepo
+	GetRepo() (repo.IRepo, error)
 	GetConfig() config.IConfig
 	GetRepoFactory() repo.IRepoFactory
 }
 type AppContext struct {
 	App    *fiber.Ctx
 	Tenant string
-	Repo   repo.IRepo
-	Cfg    config.IConfig
-	Rf     repo.IRepoFactory
+	// Repo   repo.IRepo
+	Cfg config.IConfig
+	Rf  repo.IRepoFactory
 }
 
 func (c *AppContext) GetApp() *fiber.Ctx {
@@ -38,8 +38,8 @@ func (c *AppContext) GetApp() *fiber.Ctx {
 func (c *AppContext) GetTenant() string {
 	return c.Tenant
 }
-func (c *AppContext) GetRepo() repo.IRepo {
-	return c.Repo
+func (c *AppContext) GetRepo() (repo.IRepo, error) {
+	return c.Rf.Get(c.Tenant)
 }
 func (c *AppContext) GetConfig() config.IConfig {
 	return c.Cfg
@@ -52,16 +52,16 @@ func (c *AppContext) GetRepoFactory() repo.IRepoFactory {
 }
 func NewAppContext(app *fiber.Ctx,
 	tenant string,
-	rp repo.IRepo,
+	// rp repo.IRepo,
 	cfg config.IConfig,
 	rf repo.IRepoFactory) IAppContext {
 
 	return &AppContext{
 		App:    app,
 		Tenant: tenant,
-		Repo:   rp,
-		Cfg:    cfg,
-		Rf:     rf,
+		// Repo:   rp,
+		Cfg: cfg,
+		Rf:  rf,
 	}
 }
 
@@ -85,11 +85,11 @@ func InstallRouters(
 			app.Get(startEnpont+route, func(c *fiber.Ctx) error {
 
 				tenant := c.Params("tenant")
-				r, err := rf.Get(tenant)
-				if err != nil {
-					return err
-				}
-				appCxt := NewAppContext(c, tenant, r, cfg, rf)
+				//r, err := rf.Get(tenant)
+				// if err != nil {
+				// 	return err
+				// }
+				appCxt := NewAppContext(c, tenant, cfg, rf)
 
 				return val.Handler(appCxt)
 			})
@@ -97,11 +97,8 @@ func InstallRouters(
 		if method == "post" {
 			app.Post(startEnpont+route, func(c *fiber.Ctx) error {
 				tenant := c.Params("tenant")
-				r, err := rf.Get(tenant)
-				if err != nil {
-					return err
-				}
-				appCxt := NewAppContext(c, tenant, r, cfg, rf)
+
+				appCxt := NewAppContext(c, tenant, cfg, rf)
 
 				return val.Handler(appCxt)
 			})
@@ -109,11 +106,8 @@ func InstallRouters(
 		if method == "put" {
 			app.Put(startEnpont+route, func(c *fiber.Ctx) error {
 				tenant := c.Params("tenant")
-				r, err := rf.Get(tenant)
-				if err != nil {
-					return err
-				}
-				appCxt := NewAppContext(c, tenant, r, cfg, rf)
+
+				appCxt := NewAppContext(c, tenant, cfg, rf)
 
 				return val.Handler(appCxt)
 			})
@@ -121,11 +115,8 @@ func InstallRouters(
 		if method == "delete" {
 			app.Delete(startEnpont+route, func(c *fiber.Ctx) error {
 				tenant := c.Params("tenant")
-				r, err := rf.Get(tenant)
-				if err != nil {
-					return err
-				}
-				appCxt := NewAppContext(c, tenant, r, cfg, rf)
+
+				appCxt := NewAppContext(c, tenant, cfg, rf)
 
 				return val.Handler(appCxt)
 			})
@@ -133,11 +124,8 @@ func InstallRouters(
 		if method == "patch" {
 			app.Patch(startEnpont+route, func(c *fiber.Ctx) error {
 				tenant := c.Params("tenant")
-				r, err := rf.Get(tenant)
-				if err != nil {
-					return err
-				}
-				appCxt := NewAppContext(c, tenant, r, cfg, rf)
+
+				appCxt := NewAppContext(c, tenant, cfg, rf)
 
 				return val.Handler(appCxt)
 			})

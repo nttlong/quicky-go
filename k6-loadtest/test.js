@@ -23,7 +23,7 @@ export let options = {
 
 export default function() {
   let res = http.get("http://localhost:8080/api/test-004/auth/login");
-  //let res = http.get("http://localhost:8080/health");
+  //let res = http.get("http://127.0.0.1:8080/api/test-004/auth/get-tenant");
   if (res.status !== 200) {
     console.log(`Request failed with status ${res.status}`);
   }

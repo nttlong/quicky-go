@@ -11,6 +11,6 @@ type BaseModel struct {
 
 	CreatedOn  time.Time `gorm:"index;column:CreatedOn"`
 	ModifiedOn time.Time `gorm:"index;column:ModifiedOn"`
-	ModifiedBy string    `gorm:"index,length:191;column:ModifiedBy"`
-	CreatedBy  string    `gorm:"index,length:191;column:CreatedBy"`
+	ModifiedBy string    `gorm:"index;type:varchar(50);column:ModifiedBy"`
+	CreatedBy  string    `gorm:"index;varchar(50);;column:CreatedBy"`
 }
