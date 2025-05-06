@@ -5,6 +5,8 @@ db:
   password: 123456
   host: localhost
   port: 5432
+  
+  options: "sslmode=disable collation=en_US.utf8"
  # dbSchema: public
 db_:
   type: mysql
@@ -13,6 +15,9 @@ db_:
   password: 123456
   host: localhost
   port: 3306
+  options: "charset=utf8mb4&parseTime=True&loc=Local"
+  
+
 server:
   port: 8080
   host: 0.0.0.0
