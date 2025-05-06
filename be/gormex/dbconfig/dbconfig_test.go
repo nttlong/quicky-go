@@ -115,3 +115,15 @@ func TestGetAllModelsInEntity(t *testing.T) {
 	assert.True(t, len(models) == 1)
 	assert.Equal(t, models[0], &testStruct{})
 }
+
+// toSnakeCase chuyển đổi chuỗi thành định dạng snake_case
+
+func TestToSnakeCase(t *testing.T) {
+	cfg := dbconfig.NewDbConfigBase()
+	testData := []string{"Name", "DepartmetCode", "BirdBirthday", "JoinYear", "JoinMonth", "JoinDay", "Child", "Children", "ID", "Emp"}
+	expected := []string{"name", "departmet_code", "bird_birthday", "join_year", "join_month", "join_day", "child", "children", "id", "emp"}
+	for i, s := range testData {
+		assert.Equal(t, expected[i], cfg.ToSnakeCase(s))
+	}
+
+}

@@ -11,7 +11,10 @@ import (
 	"sync"
 	"unicode"
 
+	"vngom/gormex/dberrors"
+
 	"gopkg.in/yaml.v2"
+	"gorm.io/gorm"
 )
 
 type IDbConfigBase interface {
@@ -32,9 +35,18 @@ type IDbConfigBase interface {
 	GetAllColumnsInfoFromEntity(entity interface{}) []ColumInfo
 	GetColumInfoOfField(reflect.StructField) *ColumInfo
 	GetAllModelsInEntity(entity interface{}) []interface{}
+	ToSnakeCase(s string) string
+	GetTableName(entity interface{}) string
 }
+
 type IStorage interface {
 	AutoMigrate(entity interface{}) error
+	SetDbConfig(dbConfig IDbConfig)
+	GetDbConfig() IDbConfig
+	GetDb() *gorm.DB
+	Save(entity interface{}) error
+
+	Delete(value interface{}, conds ...interface{}) error
 }
 type IDbConfig interface {
 	IDbConfigBase
@@ -43,6 +55,7 @@ type IDbConfig interface {
 	PingDb() error
 	CreateDbIfNotExist(dbname string) error
 	GetStorage(dbName string) (IStorage, error)
+	TranslateError(err error, entity interface{}, action string) dberrors.DataActionError
 }
 type DbConfigBase struct {
 	User string `yaml:"user"`
@@ -53,6 +66,23 @@ type DbConfigBase struct {
 
 	Options  map[string]string `yaml:"options"`
 	IsLoaded bool
+}
+
+func (c *DbConfigBase) ToSnakeCase(s string) string {
+	return toSnakeCase(s)
+}
+func (c *DbConfigBase) GetTableName(entity interface{}) string {
+	typ := reflect.TypeOf(entity)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	ret := typ.Name()
+	ret = c.ToSnakeCase(ret)
+	if !strings.HasSuffix(ret, "s") {
+		ret = ret + "s"
+	}
+	return ret
+
 }
 
 func (c *DbConfigBase) GetUser() string {
@@ -178,42 +208,70 @@ type ColumInfo struct {
 func (c *DbConfigBase) GetColumInfoOfField(field reflect.StructField) *ColumInfo {
 	return getColumInfoOfField(field)
 }
+
 func toSnakeCase(s string) string {
 	if s == "" {
 		return s
 	}
 
-	var result strings.Builder
-	runes := []rune(s) // Xử lý chuỗi dưới dạng rune để hỗ trợ Unicode
-
-	// Duyệt qua từng ký tự
-	for i, r := range runes {
-		// Nếu ký tự hiện tại là chữ hoa
-		if unicode.IsUpper(r) {
-			// Thêm dấu gạch dưới trước ký tự chữ hoa, trừ khi:
-			// - Đây là ký tự đầu tiên (i == 0)
-			// - Ký tự trước đó đã là dấu gạch dưới
-			if i > 0 && result.Len() > 0 && result.String()[result.Len()-1] != '_' {
-				result.WriteRune('_')
-			}
-			// Chuyển ký tự thành chữ thường và thêm vào kết quả
-			result.WriteRune(unicode.ToLower(r))
-		} else if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
-			// Nếu không phải chữ cái hoặc số, thay thế bằng dấu gạch dưới
-			// Tránh thêm nhiều dấu gạch dưới liên tiếp
-			if result.Len() == 0 || result.String()[result.Len()-1] != '_' {
-				result.WriteRune('_')
-			}
-		} else {
-			// Nếu là chữ thường hoặc số, thêm trực tiếp
-			result.WriteRune(r)
+	// Kiểm tra xem chuỗi có phải toàn chữ hoa (hoặc chữ hoa + số) không
+	isAllUpper := true
+	for _, r := range s {
+		if !unicode.IsUpper(r) && !unicode.IsNumber(r) && unicode.IsLetter(r) {
+			isAllUpper = false
+			break
 		}
 	}
 
-	// Loại bỏ dấu gạch dưới ở đầu và cuối, đồng thời thay thế nhiều dấu gạch dưới liên tiếp bằng một dấu
+	// Nếu toàn chữ hoa, chỉ cần chuyển thành chữ thường
+	if isAllUpper {
+		return strings.ToLower(s)
+	}
+
+	var result strings.Builder
+	runes := []rune(s)
+
+	// Vị trí bắt đầu của chuỗi chữ hoa
+	upperRunStart := -1
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
+		if unicode.IsUpper(r) {
+			if i == 0 {
+				// Ký tự đầu tiên là chữ hoa, không thêm _
+				result.WriteRune(unicode.ToLower(r))
+				upperRunStart = i
+			} else {
+				// Kiểm tra ranh giới từ
+				prevIsLower := unicode.IsLower(runes[i-1])
+				nextIsLower := (i+1 < len(runes)) && unicode.IsLower(runes[i+1])
+
+				if prevIsLower || (nextIsLower && upperRunStart != i-1) {
+					// Thêm _ nếu trước đó là chữ thường hoặc đây là chữ hoa bắt đầu từ mới
+					if result.Len() > 0 && result.String()[result.Len()-1] != '_' {
+						result.WriteRune('_')
+					}
+				}
+				result.WriteRune(unicode.ToLower(r))
+				upperRunStart = i
+			}
+		} else if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
+			// Thay ký tự đặc biệt bằng dấu gạch dưới
+			if result.Len() > 0 && result.String()[result.Len()-1] != '_' {
+				result.WriteRune('_')
+			}
+			upperRunStart = -1
+		} else {
+			// Chữ thường hoặc số
+			result.WriteRune(r)
+			upperRunStart = -1
+		}
+	}
+
+	// Loại bỏ dấu gạch dưới ở đầu và cuối, thay thế nhiều dấu gạch dưới liên tiếp bằng một
 	snake := strings.Trim(result.String(), "_")
 	snake = strings.ReplaceAll(snake, "__", "_")
-
 	return snake
 }
 func getColumInfoOfField(field reflect.StructField) *ColumInfo {
@@ -270,7 +328,7 @@ func getColumInfoOfField(field reflect.StructField) *ColumInfo {
 				ret.HasDefault = true
 			}
 		}
-		if t == "primaryKey" {
+		if t == "primaryKey" || t == "primary_key" {
 			ret.IsPk = true
 		}
 	}
@@ -302,23 +360,77 @@ func (c *DbConfigBase) GetAllColumnsInfoFromEntity(entity interface{}) []ColumIn
 
 }
 func (c *DbConfigBase) GetAllModelsInEntity(entity interface{}) []interface{} {
+	dupCheck := make(map[reflect.Type]bool)
 	typ := reflect.TypeOf(entity)
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
 	}
 	var models []interface{}
-	models = append(models, entity)
+
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.Type.Kind() == reflect.Struct {
-			if strings.HasPrefix(field.Tag.Get("gorm"), "foreignKey:") {
+			tag := strings.ToLower(field.Tag.Get("gorm"))
+			if strings.HasPrefix(tag, "foreignkey:") {
 				//create new entity
+				if dupCheck[field.Type] {
+					continue
+				}
 				newEntity := reflect.New(field.Type).Interface()
 				models = append(models, newEntity)
+				dupCheck[field.Type] = true
 			}
 
 		}
+		if field.Type.Kind() == reflect.Ptr && field.Type.Elem().Kind() == reflect.Struct {
+			tag := strings.ToLower(field.Tag.Get("gorm"))
+			if strings.HasPrefix(tag, "foreignkey:") {
+				//create new entity
+				if dupCheck[field.Type.Elem()] {
+					continue
+				}
+				newEntity := reflect.New(field.Type.Elem()).Interface()
+				models = append(models, newEntity)
+				dupCheck[field.Type.Elem()] = true
+			}
+		}
+		if field.Type.Kind() == reflect.Slice {
+
+			fk := field.Type.Elem().Kind()
+			if fk == reflect.Ptr {
+				sType := field.Type.Elem().Elem()
+				newEntity := reflect.New(sType).Interface()
+				if dupCheck[sType] {
+					continue
+				}
+				models = append(models, newEntity)
+				dupCheck[sType] = true
+			} else if fk == reflect.Struct {
+				sType := field.Type.Elem()
+				if dupCheck[sType] {
+					continue
+				}
+				newEntity := reflect.New(sType).Interface()
+				models = append(models, newEntity)
+				dupCheck[sType] = true
+			}
+
+		}
+		if field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.Struct {
+			tag := strings.ToLower(field.Tag.Get("gorm"))
+			if strings.HasPrefix(tag, "foreignkey:") {
+				//create new entity
+				if dupCheck[field.Type.Elem()] {
+					continue
+				}
+				newEntity := reflect.New(field.Type.Elem()).Interface()
+				models = append(models, newEntity)
+				dupCheck[field.Type.Elem()] = true
+			}
+		}
 	}
+
+	models = append(models, entity)
 	return models
 }
 

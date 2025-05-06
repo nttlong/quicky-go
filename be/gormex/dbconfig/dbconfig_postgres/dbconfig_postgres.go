@@ -2,9 +2,11 @@ package dbconfig_postgres
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"vngom/gormex/dbconfig"
+	"vngom/gormex/dberrors"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -14,7 +16,8 @@ type PostgresDbConfig struct {
 	dbconfig.DbConfigBase
 }
 type PostgresStorage struct {
-	db *gorm.DB
+	db       *gorm.DB
+	dbConfig dbconfig.IDbConfig
 }
 
 func (c *PostgresDbConfig) GetConectionString(dbname string) string {
@@ -56,10 +59,49 @@ func (c *PostgresDbConfig) PingDb() error {
 	return nil
 }
 
-func (s *PostgresStorage) AutoMigrate(entity interface{}) error {
-	return s.db.AutoMigrate(entity)
-}
+var (
+	cacheAutoMigrate = make(map[reflect.Type]bool)
+	lockAutoMigrate  = sync.RWMutex{}
+)
 
+func (s *PostgresStorage) AutoMigrate(entity interface{}) error {
+	lockAutoMigrate.RLock()
+	isAutoMigrated := cacheAutoMigrate[reflect.TypeOf(entity)]
+	lockAutoMigrate.RUnlock()
+	if isAutoMigrated {
+		return nil
+	}
+	lockAutoMigrate.Lock()
+	defer lockAutoMigrate.Unlock()
+	if cacheAutoMigrate[reflect.TypeOf(entity)] {
+		return nil
+	}
+	entities := s.dbConfig.GetAllModelsInEntity(entity)
+	err := AutoMigrate(s.db, s.dbConfig, entities...)
+
+	if err != nil {
+		return err
+	}
+	cacheAutoMigrate[reflect.TypeOf(entity)] = true
+	return nil
+}
+func (s *PostgresStorage) Save(entity interface{}) error {
+	s.AutoMigrate(entity)
+	return s.db.Create(entity).Error
+}
+func (s *PostgresStorage) Delete(value interface{}, conds ...interface{}) error {
+	s.AutoMigrate(value)
+	return s.db.Delete(value, conds).Error
+}
+func (s *PostgresStorage) SetDbConfig(config dbconfig.IDbConfig) {
+	s.dbConfig = config
+}
+func (s *PostgresStorage) GetDbConfig() dbconfig.IDbConfig {
+	return s.dbConfig
+}
+func (s *PostgresStorage) GetDb() *gorm.DB {
+	return s.db
+}
 func (c *PostgresDbConfig) GetStorage(dbName string) (dbconfig.IStorage, error) {
 	err := c.PingDb()
 	if err != nil {
@@ -73,8 +115,40 @@ func (c *PostgresDbConfig) GetStorage(dbName string) (dbconfig.IStorage, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &PostgresStorage{db: d}, nil
+	return &PostgresStorage{
+		db:       d,
+		dbConfig: c}, nil
 
+}
+func (c *PostgresDbConfig) TranslateError(err error, entity interface{}, action string) dberrors.DataActionError {
+	//dupliate error translate
+	//"duplicate key value violates unique constraint \"users_pkey\""
+	errStr := err.Error()
+	if strings.Contains(errStr, "duplicate key value violates unique constraint") {
+		tableName := c.GetTableName(entity)
+
+		if strings.Contains(errStr, tableName+"_pkey") {
+			cols := c.GetAllColumnsInfoFromEntity(entity)
+			refCols := make([]string, 0)
+			for _, col := range cols {
+				if col.IsPk {
+					refCols = append(refCols, col.Name)
+				}
+			}
+			return dberrors.DataActionError{
+				Err:          err,
+				Action:       action,
+				Code:         dberrors.Duplicate,
+				RefColumns:   refCols,
+				RefTableName: tableName,
+			}
+
+		}
+
+	}
+	return dberrors.DataActionError{
+		Err: err,
+	}
 }
 func New() dbconfig.IDbConfig {
 	return &PostgresDbConfig{}
@@ -122,11 +196,65 @@ func (c *PostgresDbConfig) createDbIfNotExist(dbname string) error {
 	LC_COLLATE 'vi_VN.UTF-8'
 	LC_CTYPE 'vi_VN.UTF-8';
 	*/
-	collate := c.DbConfigBase.Options["collate"]
-	sql := fmt.Sprintf("CREATE DATABASE \"%s\" WITH ENCODING 'UTF8' LC_COLLATE '%s' LC_CTYPE '%s'", dbname, collate, collate)
+	//check if collaction is set
+
+	collate := c.DbConfigBase.Options["collation"]
+	sql := fmt.Sprintf("CREATE DATABASE \"%s\" WITH ENCODING 'UTF8'", dbname)
+	if collate != "" {
+		collate = "vi_VN.UTF-8"
+		sql = fmt.Sprintf("CREATE DATABASE \"%s\" WITH ENCODING 'UTF8' LC_COLLATE '%s' LC_CTYPE '%s'", dbname, collate, collate)
+	}
+
 	err = d.Exec(sql).Error
 	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		postgresSQLEnablecitextExtension := "CREATE EXTENSION IF NOT EXISTS citext;"
+		newDbCnn := c.GetConectionString(dbname)
+		newDb, err := gorm.Open(postgres.Open(newDbCnn), &gorm.Config{})
+		if err != nil {
+			return err
+		}
+		err = newDb.Exec(postgresSQLEnablecitextExtension).Error
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	postgresSQLEnablecitextExtension := "CREATE EXTENSION IF NOT EXISTS citext;"
+	newDbCnn := c.GetConectionString(dbname)
+	newDb, err := gorm.Open(postgres.Open(newDbCnn), &gorm.Config{})
+	if err != nil {
 		return err
+	}
+	err = newDb.Exec(postgresSQLEnablecitextExtension).Error
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+func AutoMigrate(db *gorm.DB, cfg dbconfig.IDbConfig, entities ...interface{}) error {
+	for _, e := range entities {
+		err := db.AutoMigrate(e)
+		cols := cfg.GetAllColumnsInfoFromEntity(e)
+		tablbName := cfg.GetTableName(e)
+		for _, col := range cols {
+			if col.DbType == "varchar" {
+				//alert colum to citext
+				dbColName := cfg.ToSnakeCase(col.Name)
+				sqlAlterCol := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE citext", tablbName, dbColName)
+				err := db.Exec(sqlAlterCol).Error
+				if err != nil {
+					fmt.Println(sqlAlterCol)
+					fmt.Println(err)
+				}
+
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
 	}
 	return nil
 }

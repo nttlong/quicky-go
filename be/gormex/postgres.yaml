@@ -6,4 +6,4 @@ db:
   options:
     sslmode: "disable"
     timezone: "Asia/Shanghai"
-    collation: "vi_VN.UTF-8"
+    collation: ""
