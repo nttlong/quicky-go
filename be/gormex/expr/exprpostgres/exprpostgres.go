@@ -1,126 +1,104 @@
 package exprpostgres
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"vngom/gormex/expr"
+	_ "vngom/gormex/expr"
+	"vngom/gormex/expr/compiler"
 )
 
 type ExprPostgres struct {
-	expr.ISqlParserBase
+	expr.IBaseExpr
 }
 
-func (ep *ExprPostgres) Conditional(rawCondition string) (string, error) {
-	ast := expr.ParseExpression(rawCondition)
-	newAst, err := ep.ResolveAst(ast)
+func (e *ExprPostgres) CompileExpr(expr string) (string, error) {
+	n, err := e.Compile(expr)
 	if err != nil {
-		return "", err
+		return "", errors.New(fmt.Sprintf("\nerror compiling expression: %s\t %s", err.Error(), expr))
 	}
 
-	return ep.ReconstructExpression(newAst), nil
-}
-func (ep *ExprPostgres) ResolveAst(ast *expr.Node) (*expr.Node, error) {
-	return resolveAst(ast, ep)
+	r, err := e.GetStrExpr(n)
+	if err != nil {
+		return "", errors.New(fmt.Sprintf("\nerror compiling expression: %s\t %s", err.Error(), expr))
+	}
+	return r, nil
 }
 
-var (
-	insOfExprPostgres *ExprPostgres
-	once              sync.Once
-)
+var exprPostgres = &ExprPostgres{}
+var once sync.Once
 
-func New() expr.ISqlParser {
+func New() expr.IExpr {
 	once.Do(func() {
-		insOfExprPostgres = &ExprPostgres{
-			expr.SqlParserBase{},
-		}
+		exprPostgres = &ExprPostgres{}
+		exprPostgres.IBaseExpr = expr.NewBaseExpr()
+		exprPostgres.SetResolver(resolvePostgres)
 	})
-	return insOfExprPostgres
-}
-func resolveAst(ast *expr.Node, ep expr.ISqlParserBase) (*expr.Node, error) {
-	if ast == nil {
-		return nil, nil
-	}
 
-	retAst := ast
-	switch ast.Type {
-	case "operand":
-		retAst.Value = ep.ToSnakeCase(ast.Value)
-		l, le := resolveAst(ast.Left, ep)
-		if le != nil {
-			return nil, le
-		}
-		retAst.Left = l
-		r, re := resolveAst(ast.Right, ep)
-		if re != nil {
-			return nil, re
-		}
-		retAst.Right = r
-		return retAst, nil
-	case "function":
-		return resolvePgFunction(ast, ep)
-
-	default:
-		for i, arg := range ast.Arguments {
-			argAst, err := resolveAst(arg, ep)
-			if err != nil {
-				return nil, err
-			}
-			ast.Arguments[i] = argAst
-		}
-		rLeft, err := resolveAst(ast.Left, ep)
-		if err != nil {
-			return nil, err
-		}
-
-		retRight, err := resolveAst(ast.Right, ep)
-		if err != nil {
-			return nil, err
-		}
-		retAst.Left = rLeft
-		retAst.Right = retRight
-		return retAst, nil
-	}
+	return exprPostgres
 
 }
 
-// this function will transform the function to postgres function
-func resolvePgFunction(ast *expr.Node, ep expr.ISqlParserBase) (*expr.Node, error) {
-	retNode := ast
+var compilerOp = map[string]string{
+	"&&": "AND",
+	"||": "OR",
+	"!":  "NOT",
+	"==": "=",
+}
 
-	funcName := strings.ToLower(ast.Value)
-	switch funcName {
-	case "len":
-
-		retNode.Value = "LENGTH"
-		for i, arg := range ast.Arguments {
-			argAst, err := resolveAst(arg, ep)
-			if err != nil {
-				return nil, err
-			}
-			retNode.Arguments[i] = argAst
-		}
-		return retNode, nil
-	case "year", "month", "day", "hour", "minute", "second":
-		retNode.Value = "date_part"
-		oldArg := retNode.Arguments[0]
-		oldArg.Value = ep.ToSnakeCase(oldArg.Value)
-		retNode.Arguments = []*expr.Node{
-			{
-				Type:  "operand",
-				Value: "'" + funcName + "'",
-			},
-			oldArg,
-		}
-
-		return retNode, nil
-	default:
-		for _, arg := range ast.Arguments {
-			argAst, err := resolveAst(arg, ep)
-			if err != nil {
-				return nil, err
-			}
-			retNode.Arguments = append(retNode.Arguments, argAst)
-		}
-		return retNode, nil
+func resolvePostgres(n *compiler.SimpleExprTree) error {
+	if p, ok := compilerOp[n.Op]; ok {
+		n.Op = p
 	}
+	if n.Nt == "field" {
+		if !compiler.IsValidColumnName(n.V) {
+			return fmt.Errorf("invalid column name: %s", n.V)
+		}
+		n.V = compiler.ToSnakeCase(n.V)
+	}
+	if n.Nt == "func" {
+		fncName := strings.ToLower(n.V)
+		switch fncName {
+		case "year", "month", "day", "hour", "minute", "second":
+			err := compileTimeFunc(n)
+			if err != nil {
+				return err
+			}
+
+		}
+
+		// TODO: implement resolver for postgres
+	}
+	return nil
+}
+func compileTimeFunc(n *compiler.SimpleExprTree) error {
+	/**
+	"year(ID)->date_part('year',id)",
+	"month(ID)->date_part('month',id)",
+	"day(ID)->date_part('day',id)",
+	"hour(ID)->date_part('hour',id)",
+	"minute(ID)->date_part('minute',id)",
+	"second(ID)->date_part('second',id)",
+	*/
+	//fP := fmt.Sprint("date_part('%s',id)")
+	if n.Ns == nil || len(n.Ns) != 1 {
+		return errors.New(fmt.Sprintf("\nnvalid function call. Function %s requires only one argument", n.V))
+	}
+	oldFnName := n.V
+	n.V = "date_part"
+	oldNs := n.Ns
+	n.Ns = []*compiler.SimpleExprTree{
+		{
+			Nt: "const",
+			V:  "'" + oldFnName + "'",
+		},
+	}
+	// append oldNs to n.Ns
+
+	n.Ns = append(n.Ns, oldNs...)
+
+	return nil
+
 }

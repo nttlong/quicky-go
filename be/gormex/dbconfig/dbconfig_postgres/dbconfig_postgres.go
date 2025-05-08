@@ -7,6 +7,9 @@ import (
 	"sync"
 	"vngom/gormex/dbconfig"
 	"vngom/gormex/dberrors"
+	"vngom/gormex/expr"
+
+	"vngom/gormex/expr/exprpostgres"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,6 +21,7 @@ type PostgresDbConfig struct {
 type PostgresStorage struct {
 	db       *gorm.DB
 	dbConfig dbconfig.IDbConfig
+	parser   expr.IExpr
 }
 
 func (c *PostgresDbConfig) GetConectionString(dbname string) string {
@@ -87,11 +91,123 @@ func (s *PostgresStorage) AutoMigrate(entity interface{}) error {
 }
 func (s *PostgresStorage) Save(entity interface{}) error {
 	s.AutoMigrate(entity)
+	return s.db.Save(entity).Error
+}
+func (s *PostgresStorage) Create(entity interface{}) error {
+	s.AutoMigrate(entity)
 	return s.db.Create(entity).Error
+}
+func (s *PostgresStorage) CreateInBatches(entities interface{}, batchSize int) error {
+	typ := reflect.TypeOf(entities)
+	if typ.Kind() == reflect.Slice {
+		typ = typ.Elem()
+		s.AutoMigrate(reflect.New(typ).Interface())
+	}
+
+	return s.db.CreateInBatches(entities, batchSize).Error
+}
+func (s *PostgresStorage) Exec(sql string, values ...interface{}) error {
+	return s.db.Exec(sql, values...).Error
+}
+func (s *PostgresStorage) Find(dest interface{}, conds ...interface{}) error {
+	typ := reflect.TypeOf(dest)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() == reflect.Slice {
+		typ = typ.Elem()
+		s.AutoMigrate(reflect.New(typ).Interface())
+	}
+
+	if conds != nil || len(conds) > 0 {
+		if reflect.TypeOf(conds[0]) == reflect.TypeOf("string") {
+			strCon := conds[0].(string)
+			node, err := s.parser.CompileExpr(strCon)
+			if err == nil {
+				conds[0] = node
+				return s.db.Find(dest, node, conds[1:]).Error
+			}
+		}
+
+	}
+	return s.db.Find(dest, conds).Error
+}
+
+func (s *PostgresStorage) Update(entity interface{}, conds ...interface{}) error {
+	s.AutoMigrate(entity)
+	if conds != nil || len(conds) > 0 {
+		if reflect.TypeOf(conds[0]) == reflect.TypeOf("string") {
+			strCon := conds[0].(string)
+			node, err := s.parser.CompileExpr(strCon)
+			if err == nil {
+				conds[0] = node
+				return s.db.Model(entity).Where(node, conds[1:]).Updates(entity).Error
+			}
+		}
+
+	}
+	return s.db.Model(entity).Updates(entity).Error
+}
+
+func (s *PostgresStorage) First(dest interface{}, conds ...interface{}) error {
+
+	s.AutoMigrate(dest)
+	//parse condition
+	if conds != nil || len(conds) > 0 {
+		if reflect.TypeOf(conds[0]) == reflect.TypeOf("string") {
+			strCon := conds[0].(string)
+			node, err := s.parser.CompileExpr(strCon)
+			if err == nil {
+				conds[0] = node
+				return s.db.First(dest, node, conds[1:]).Error
+
+			}
+		}
+
+	}
+
+	return s.db.First(dest, conds).Error
 }
 func (s *PostgresStorage) Delete(value interface{}, conds ...interface{}) error {
 	s.AutoMigrate(value)
+	if conds != nil || len(conds) > 0 {
+		if reflect.TypeOf(conds[0]) == reflect.TypeOf("string") {
+			strCon := conds[0].(string)
+			node, err := s.parser.CompileExpr(strCon)
+			if err == nil {
+				conds[0] = node
+				return s.db.Delete(value, node, conds[1:]).Error
+
+			}
+		}
+
+	}
 	return s.db.Delete(value, conds).Error
+}
+func (s *PostgresStorage) Count(entity interface{}, conds ...interface{}) (int64, error) {
+	s.AutoMigrate(entity)
+	var ret int64
+	if conds != nil || len(conds) > 0 {
+		if reflect.TypeOf(conds[0]) == reflect.TypeOf("string") {
+			strCon := conds[0].(string)
+			node, err := s.parser.CompileExpr(strCon)
+			if err == nil {
+				conds[0] = node
+				err := s.db.Model(entity).Where(node, conds[1:]).Count(&ret).Error
+				if err != nil {
+					return 0, err
+				}
+				return ret, nil
+
+			}
+		}
+	}
+
+	errL := s.db.Model(entity).Count(&ret).Error
+	if errL != nil {
+		return 0, errL
+	}
+	return ret, nil
 }
 func (s *PostgresStorage) SetDbConfig(config dbconfig.IDbConfig) {
 	s.dbConfig = config
@@ -101,6 +217,12 @@ func (s *PostgresStorage) GetDbConfig() dbconfig.IDbConfig {
 }
 func (s *PostgresStorage) GetDb() *gorm.DB {
 	return s.db
+}
+func (c *PostgresStorage) GetParser() expr.IExpr {
+	return c.parser
+}
+func (c *PostgresStorage) SetParser(parser expr.IExpr) {
+	c.parser = parser
 }
 func (c *PostgresDbConfig) GetStorage(dbName string) (dbconfig.IStorage, error) {
 	err := c.PingDb()
@@ -117,7 +239,9 @@ func (c *PostgresDbConfig) GetStorage(dbName string) (dbconfig.IStorage, error) 
 	}
 	return &PostgresStorage{
 		db:       d,
-		dbConfig: c}, nil
+		dbConfig: c,
+		parser:   exprpostgres.New(),
+	}, nil
 
 }
 func (c *PostgresDbConfig) TranslateError(err error, entity interface{}, action string) dberrors.DataActionError {

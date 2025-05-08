@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"vngom/gormex/dberrors"
+	"vngom/gormex/expr"
 
 	"gopkg.in/yaml.v2"
 	"gorm.io/gorm"
@@ -45,8 +46,18 @@ type IStorage interface {
 	GetDbConfig() IDbConfig
 	GetDb() *gorm.DB
 	Save(entity interface{}) error
+	Create(entity interface{}) error
+	CreateInBatches(value interface{}, batchSize int) error
 
-	Delete(value interface{}, conds ...interface{}) error
+	Delete(value interface{}, args ...interface{}) error
+	First(dest interface{}, args ...interface{}) error
+	GetParser() expr.IExpr
+	SetParser(parser expr.IExpr)
+	Update(entity interface{}, conds ...interface{}) error
+	Find(dest interface{}, conds ...interface{}) error
+
+	Exec(sql string, values ...interface{}) error
+	Count(entity interface{}, conds ...interface{}) (int64, error)
 }
 type IDbConfig interface {
 	IDbConfigBase

@@ -2,7 +2,9 @@ package dbconfig_postgres_test
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 	"vngom/gormex/dbconfig/dbconfig_postgres"
 	"vngom/gormex/dberrors"
 
@@ -12,7 +14,14 @@ import (
 var yamlFile = "E:/Docker/go/quicky-go/be/gormex/postgres.yaml"
 var cnnNoDb = "postgres://postgres:123456@localhost:5432/"
 
+type BaseInfo struct {
+	CreatedOn time.Time  `gorm:"type:timestamp;default:current_timestamp"`
+	UpdatedOn *time.Time `gorm:"type:timestamp;default:current_timestamp"`
+	CreatedBy string     `gorm:"type:varchar(50);default:admin"`
+	UpdatedBy *string    `gorm:"type:varchar(50);"`
+}
 type User struct {
+	BaseInfo
 	ID       string `gorm:"type:varchar(36);primary_key"`
 	Username string `gorm:"type:varchar(50);uniqueIndex:idx_name_username"`
 	Password string `gorm:"type:varchar(256);"`
@@ -211,5 +220,101 @@ func TestTranslateError(t *testing.T) {
 	assert.Equal(t, "save", ft.Action)
 	assert.Equal(t, 1, len(ft.RefColumns))
 	assert.Equal(t, "id", ft.RefColumns[0])
+
+}
+func randomTimeBetween(start, end time.Time) time.Time {
+	// Calculate the duration between start and end
+	duration := end.Sub(start)
+
+	// Generate a random duration within the range
+	randomDuration := time.Duration(rand.Int63n(int64(duration)))
+
+	// Add the random duration to start time
+	return start.Add(randomDuration)
+}
+
+func TestPposgresStorageDatabaseInteract(t *testing.T) {
+	cfg := dbconfig_postgres.New()
+	cfg.LoadFromYamlFile(yamlFile)
+	fmt.Println(cfg.GetConectionStringNoDatabase())
+	assert.Equal(t, cnnNoDb, cfg.GetConectionStringNoDatabase())
+	err := cfg.PingDb()
+	assert.NoError(t, err)
+	s, _ := cfg.GetStorage("test")
+	err = s.Delete(&User{}, "Username = ?", "admin")
+
+	assert.NoError(t, err)
+	err = s.Save(&User{
+		ID:       "123456",
+		Username: "admin",
+		Password: "123456",
+	})
+	assert.NoError(t, err)
+
+	var u User
+	s.First(&u, "Userame =?", "admin")
+
+	assert.Equal(t, "admin", u.Username)
+}
+func TestInsertMultiUsers(t *testing.T) {
+	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2025, 12, 31, 23, 59, 59, 999999999, time.UTC)
+	cfg := dbconfig_postgres.New()
+	cfg.LoadFromYamlFile(yamlFile)
+	fmt.Println(cfg.GetConectionStringNoDatabase())
+	assert.Equal(t, cnnNoDb, cfg.GetConectionStringNoDatabase())
+	err := cfg.PingDb()
+	assert.NoError(t, err)
+	s, _ := cfg.GetStorage("test")
+	err = s.Delete(&User{}, "Username = ?", "admin")
+
+	assert.NoError(t, err)
+	//var users []*User
+	users := []User{}
+	for i := 0; i < 1000; i++ {
+		// create random time
+		randomTime := randomTimeBetween(start, end)
+		users = append(users, User{
+			BaseInfo: BaseInfo{
+				CreatedBy: "admin",
+				CreatedOn: randomTime,
+			},
+			ID:       fmt.Sprintf("%d", i),
+			Username: fmt.Sprintf("someuser%d", i),
+			Password: "123456",
+		})
+	}
+	s.GetDb().Begin()
+	err = s.CreateInBatches(users, 100)
+
+	t.Log(err)
+
+	var u User
+
+	s.First(&u, "Username =?", "someuser1")
+
+	assert.Equal(t, "someuser1", u.Username)
+
+}
+func TestCondinalParse(t *testing.T) {
+	cfg := dbconfig_postgres.New()
+	cfg.LoadFromYamlFile(yamlFile)
+	fmt.Println(cfg.GetConectionStringNoDatabase())
+	assert.Equal(t, cnnNoDb, cfg.GetConectionStringNoDatabase())
+	err := cfg.PingDb()
+	assert.NoError(t, err)
+	s, _ := cfg.GetStorage("test")
+	users := []User{}
+	err = s.Find(&users, "year(CreatedOn)==?", 2025)
+	var count int64
+	//s.GetDb().Model(&User{}).Where("year(created_on) = ?", 2025).Count(&count)
+	if c, e := s.Count(&User{}, "(year(CreatedOn) == ?) && (month(CreatedOn) == ?)", 2024, 12); e == nil {
+		count = c
+	} else {
+		assert.True(t, c > int64(0))
+	}
+	assert.True(t, count > int64(0))
+	fmt.Print(count)
+	t.Log(err)
 
 }

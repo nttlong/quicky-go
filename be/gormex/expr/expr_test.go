@@ -4,14 +4,19 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
 	"vngom/gormex/expr"
 
 	"github.com/stretchr/testify/assert"
 )
 
 var exprlst = []string{
+	"((year(join_date)=?) AND (month(join_date)=?)) && (a==b)->year(join_date) = ? AND month(join_date) OR (a=b) = ?",
 
-	"code=='abc\\' AND cc'->code = 'abc''' AND cc'",
+	"(year(join_date)=?) AND (month(join_date)=?)->year(join_date) = ? AND month(join_date) = ?",
+	"(year(join_date)=?) && (month(join_date)=?)->year(join_date) = ? AND month(join_date) = ?",
+
+	"code=='abc\\' AND cc'->code = 'abc'' AND cc'",
 	"code=='abc AND cc'->code = 'abc AND cc'",
 	"code=='abc OR cc'->code = 'abc OR cc'",
 	"code=='abc NOT cc'->code = 'abc NOT cc'",
@@ -30,9 +35,32 @@ var exprlst = []string{
 	"sum(a,b,c)->sum(a,b,c)",
 	"date_part('year',birth_day)=?->date_part('year',birth_day) = ?",
 	"left(first_name+''+last_name,3)='abc'->left(first_name + '' + last_name,3) = 'abc'",
-	"left(first_name+''+last_name,3) like 'abc'->left(first_name + '' + last_name,3) LIKE 'abc'",
+	"left(first_name+' '+last_name,3) like 'abc'->left(first_name + ' ' + last_name,3) LIKE 'abc'",
 }
 
+func TestSnakeCase(t *testing.T) {
+	testList := []string{
+		"UserName->user_name",
+		"Email->email",
+		"FirstName->first_name",
+		"Code->code",
+		"FullName->full_name",
+		"Id->id",
+		"UserId->user_id",
+		"ID->id",
+		"ABC->abc",
+		"ABCD->abcd",
+	}
+	for _, x := range testList {
+		input := strings.Split(x, "->")[0]
+		ouput := strings.Split(x, "->")[1]
+		fx := &expr.SqlParserBase{}
+		r := fx.ToSnakeCase(input)
+		assert.Equal(t, r, ouput)
+
+	}
+
+}
 func TestParseExprWithParam(t *testing.T) {
 	ex1 := expr.ParseExprWithParam("code=='abc\\' AND cc'")
 	fmt.Println(ex1.Expr) // "code=@p0"
