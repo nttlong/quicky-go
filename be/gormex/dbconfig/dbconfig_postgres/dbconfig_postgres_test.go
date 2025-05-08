@@ -305,16 +305,21 @@ func TestCondinalParse(t *testing.T) {
 	assert.NoError(t, err)
 	s, _ := cfg.GetStorage("test")
 	users := []User{}
-	err = s.Find(&users, "year(CreatedOn)==?", 2025)
+	err = s.Find(&users, "(year(CreatedOn)==?)&&(month(CreatedOn))==?", 2025, 5)
+	if err != nil {
+		fmt.Println(err)
+	}
 	var count int64
-	//s.GetDb().Model(&User{}).Where("year(created_on) = ?", 2025).Count(&count)
-	if c, e := s.Count(&User{}, "(year(CreatedOn) == ?) && (month(CreatedOn) == ?)", 2024, 12); e == nil {
+	if c, e := s.Count(&User{}, "(year(CreatedOn) == ?) && (month(CreatedOn) == ?)", 2025, 5); e == nil {
 		count = c
 	} else {
-		assert.True(t, c > int64(0))
+		assert.Equal(t, len(users), count)
 	}
-	assert.True(t, count > int64(0))
-	fmt.Print(count)
+	// assert.True(t, count > int64(0))
+	fmt.Println(count)
 	t.Log(err)
+
+	err = s.First(&User{}, "(year(CreatedOn) == ?) && (month(CreatedOn) == ?)", 2025, 5)
+	assert.Nil(t, err)
 
 }

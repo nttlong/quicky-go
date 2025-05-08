@@ -125,7 +125,20 @@ func (s *PostgresStorage) Find(dest interface{}, conds ...interface{}) error {
 			node, err := s.parser.CompileExpr(strCon)
 			if err == nil {
 				conds[0] = node
-				return s.db.Find(dest, node, conds[1:]).Error
+				// //var newCnds []interface{} = conds[1:]
+				// sliceType := reflect.SliceOf(typ)
+				// ret := reflect.New(sliceType).Interface()
+				// newCons := make([]interface{}, len(conds))
+				// for i := 1; i < len(conds); i++ {
+				// 	newCons[i] = conds[i]
+				// }
+				err := s.db.Find(dest, conds...).Error
+				if err != nil {
+					return err
+				}
+				// reflect.ValueOf(ret).Elem().Set(reflect.ValueOf(dest))
+
+				return nil
 			}
 		}
 
@@ -159,7 +172,7 @@ func (s *PostgresStorage) First(dest interface{}, conds ...interface{}) error {
 			node, err := s.parser.CompileExpr(strCon)
 			if err == nil {
 				conds[0] = node
-				return s.db.First(dest, node, conds[1:]).Error
+				return s.db.First(dest, conds).Error
 
 			}
 		}
@@ -176,7 +189,7 @@ func (s *PostgresStorage) Delete(value interface{}, conds ...interface{}) error 
 			node, err := s.parser.CompileExpr(strCon)
 			if err == nil {
 				conds[0] = node
-				return s.db.Delete(value, node, conds[1:]).Error
+				return s.db.Delete(value, conds).Error
 
 			}
 		}
@@ -193,7 +206,7 @@ func (s *PostgresStorage) Count(entity interface{}, conds ...interface{}) (int64
 			node, err := s.parser.CompileExpr(strCon)
 			if err == nil {
 				conds[0] = node
-				err := s.db.Model(entity).Where(node, conds[1:]).Count(&ret).Error
+				err := s.db.Model(entity).Where(node, conds[1:]...).Count(&ret).Error
 				if err != nil {
 					return 0, err
 				}
