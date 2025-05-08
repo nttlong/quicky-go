@@ -1,4 +1,4 @@
-package entitiespostgres
+package repositorypostgres
 
 import (
 	"reflect"
@@ -6,15 +6,15 @@ import (
 	_ "vngom/gormex/dbconfig"
 	"vngom/gormex/dbconfig/dbconfig_postgres"
 	_ "vngom/gormex/dbconfig/dbconfig_postgres"
-	"vngom/gormex/entities"
-	_ "vngom/gormex/entities"
+	"vngom/gormex/repository"
+	_ "vngom/gormex/repository"
 )
 
-type EntityPostgres[T any] struct {
+type RepositoryPostgres[T any] struct {
 	storage dbconfig.IStorage
 }
 
-func (e *EntityPostgres[T]) First(cond T) (*T, error) {
+func (e *RepositoryPostgres[T]) First(cond T) (*T, error) {
 
 	err := e.storage.First(&cond)
 	if err != nil {
@@ -22,12 +22,12 @@ func (e *EntityPostgres[T]) First(cond T) (*T, error) {
 	}
 	return &cond, nil
 }
-func (e *EntityPostgres[T]) Find(conds ...[]interface{}) ([]T, error) {
+func (e *RepositoryPostgres[T]) Find(conds ...[]interface{}) ([]T, error) {
 	var entities []T
 	err := e.storage.Find(&entities, conds)
 	return entities, err
 }
-func (e *EntityPostgres[T]) Create(entity T) (*T, error) {
+func (e *RepositoryPostgres[T]) Create(entity T) (*T, error) {
 	err := e.storage.Create(&entity)
 	if err != nil {
 		return nil, err
@@ -35,31 +35,34 @@ func (e *EntityPostgres[T]) Create(entity T) (*T, error) {
 		return &entity, nil
 	}
 }
-func (e *EntityPostgres[T]) Update(entity T) error {
+func (e *RepositoryPostgres[T]) Update(entity T) error {
 	return e.storage.Update(&entity)
 }
-func (e *EntityPostgres[T]) Delete(entity T) error {
+func (e *RepositoryPostgres[T]) Delete(entity T) error {
 	return e.storage.Delete(&entity)
 }
-func (e *EntityPostgres[T]) Count(conds ...[]interface{}) (int64, error) {
+func (e *RepositoryPostgres[T]) Count(conds ...[]interface{}) (int64, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
 	return e.storage.Count(t, conds)
 
 }
-func (e *EntityPostgres[T]) Save(entity T) error {
+func (e *RepositoryPostgres[T]) Save(entity T) error {
 	return e.storage.Save(&entity)
 }
 
-func New[T any](Storage dbconfig.IStorage) entities.IEntity[T] {
+func New[T any](Storage dbconfig.IStorage) repository.IRepository[T] {
 	// get type of Storage
 	typ := reflect.TypeOf(Storage)
 
 	if typ != reflect.TypeOf(new(dbconfig_postgres.PostgresStorage)) {
 		panic("Storage must be a pointer to dbconfig_postgres.PostgresStorage")
 	}
+	var zero T
 
-	return &EntityPostgres[T]{
+	Storage.AutoMigrate(&zero)
+
+	return &RepositoryPostgres[T]{
 		storage: Storage,
 	}
 }

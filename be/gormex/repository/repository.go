@@ -1,6 +1,6 @@
-package entities
+package repository
 
-type IEntity[T any] interface {
+type IRepository[T any] interface {
 	First(cond T) (*T, error)
 	Find(conds ...[]interface{}) ([]T, error)
 	Create(entity T) (*T, error)

@@ -1,12 +1,14 @@
-package entities_test
+// package repositoryposgres_test
+package repositorypostgres_test
 
 import (
 	"fmt"
 	"testing"
 	"time"
 	"vngom/gormex/dbconfig/dbconfig_postgres"
-	"vngom/gormex/entities/entitiespostgres"
-	_ "vngom/gormex/entities/entitiespostgres"
+
+	"vngom/gormex/repository/repositorypostgres"
+	_ "vngom/gormex/repository/repositorypostgres"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -63,9 +65,9 @@ func TestEntitiesPostgres(t *testing.T) {
 	assert.NoError(t, err)
 	s, err := cfg.GetStorage("test")
 	assert.NoError(t, err)
-	err = s.Delete(&User{ID: "123456"})
-	assert.NoError(t, err)
-	userRepo := entitiespostgres.New[User](s)
+	// err = s.Delete(&User{ID: "123456"})
+	// assert.NoError(t, err)
+	userRepo := repositorypostgres.New[User](s)
 	u, err := userRepo.Create(User{ID: "123456", Username: "admin", Password: "123456"})
 	if err != nil {
 		t.Error(err)
