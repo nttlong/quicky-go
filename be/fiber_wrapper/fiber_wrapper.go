@@ -3,7 +3,6 @@ package fiber_wrapper
 import (
 	"strings"
 	"vngom/config"
-	"vngom/repo"
 
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
@@ -20,9 +19,8 @@ type IAppContext interface {
 	GetApp() *fiber.Ctx
 	GetTenant() string
 	SetTenant(tenant string)
-	GetRepo() (repo.IRepo, error)
+
 	GetConfig() config.IConfig
-	GetRepoFactory() repo.IRepoFactory
 }
 type AppContext struct {
 	App    *fiber.Ctx

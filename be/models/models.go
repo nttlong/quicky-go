@@ -9,5 +9,5 @@ import (
 
 type Account account.Account
 type PersonalInfo personal.PersonalInfo
-type Tenants tenants.Tenants
+type Tenants tenants.TenantInfo
 type Department department.Department

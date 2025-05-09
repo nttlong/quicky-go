@@ -15,8 +15,8 @@ type TenantInfo struct {
 	DeletedBy   *string    `gorm:"index;column:DeletedBy"`                     // Người xóa mềm (soft delete)
 	DbTenant    string     `gorm:"uniqueIndex:idx_db_tenants_name,length:191"` // Tên của database của tenant
 
-	CreatedOn  time.Time `gorm:"index"`
-	ModifiedOn time.Time `gorm:"index"`
-	ModifiedBy string    `gorm:"index"`
-	CreatedBy  string    `gorm:"index"`
+	CreatedOn  time.Time  `gorm:"index"`
+	ModifiedOn *time.Time `gorm:"index"`
+	ModifiedBy string     `gorm:"index"`
+	CreatedBy  string     `gorm:"index"`
 }
